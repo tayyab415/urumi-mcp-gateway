@@ -175,10 +175,12 @@ class Gateway:
                 server.last_error = failure_.message
             else:
                 assert found is not None
-                # Trust on first use: what a server offers when an admin first connects it
-                # (or what the platform's own store servers offer) counts as reviewed.
-                # Anything that changes or appears after that waits for an admin.
-                trust_new = server.last_ok_at is None or server.managed_by is not None
+                # Trust on first use: what a server offers the first time it answers counts
+                # as reviewed. That holds for the platform's own store servers too: a store's
+                # MCP server is new code the platform deployed, but a tool it adds later is
+                # no more trustworthy than one an admin-added server adds. Anything that
+                # changes or appears after the first discovery waits for an admin.
+                trust_new = server.last_ok_at is None
                 server.status, server.last_error, server.last_ok_at = "ok", None, now
                 server.latency_ms, server.protocol_version = found.latency_ms, found.protocol_version
                 self._merge_tools(server, found.tools, trust_new)
