@@ -10,6 +10,7 @@ import anyio
 import httpx2
 import pytest
 from fastapi import FastAPI, HTTPException
+from mcp.shared.exceptions import MCPError
 
 from gateway.config import Settings
 from gateway.main import create_app
@@ -99,8 +100,8 @@ async def test_store_lifecycle_registers_and_removes_tools(tmp_path):
                         bob_key = (await bob.post("/api/keys", json={"name": "cli"})).json()["key"]
                         async with mcp_client(gw, bob_key) as bob_mcp:
                             assert not any(t.name.startswith("store-north__") for t in (await bob_mcp.list_tools()).tools)
-                            hidden = await bob_mcp.call_tool("store-north__list_products", {})
-                            assert hidden.is_error and "Unknown tool" in hidden.content[0].text
+                            with pytest.raises(MCPError, match="Unknown tool"):
+                                await bob_mcp.call_tool("store-north__list_products", {})
 
                         listed = (await ana.get("/api/stores")).json()["stores"]
                         assert listed[0]["registered"] and listed[0]["mine"] and listed[0]["can_delete"]
@@ -119,7 +120,7 @@ async def test_store_lifecycle_registers_and_removes_tools(tmp_path):
                         assert not any(t.name.startswith("store-north__") for t in (await client.list_tools()).tools)
                         await anyio.sleep(0.6)  # a few sync passes
                         assert not any(t.name.startswith("store-north__") for t in (await client.list_tools()).tools)
-                        gone = await client.call_tool("store-north__list_products", {})
-                        assert gone.is_error and "Unknown tool" in gone.content[0].text
+                        with pytest.raises(MCPError, match="Unknown tool"):
+                            await client.call_tool("store-north__list_products", {})
                     assert stores["north"]["phase"] == "Deleting"
                 tg.cancel_scope.cancel()

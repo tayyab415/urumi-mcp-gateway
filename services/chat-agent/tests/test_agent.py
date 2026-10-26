@@ -117,6 +117,23 @@ async def test_disabled_tool_called_anyway_is_refused_not_run(gateway):
     assert gateway.fake.audit == []
 
 
+async def test_tool_the_gateway_refuses_as_unknown_goes_back_to_the_model(gateway):
+    # The tool was in this turn's list, so chat sends the call, but it is gone by then.
+    # The gateway answers with a JSON-RPC error (-32602, "Unknown tool"), not a tool
+    # result; the model hears that the call did not run, and the turn carries on.
+    agent, model = make(gateway, [[call("s", "stock__get_stock", product_name="Shin Guards")], [say("Can't check.")]])
+    agent._connect = _disable_after_connect(agent._connect, gateway, "stock")
+    events = await run(agent, [], "stock?")
+
+    result = next(e for e in events if e["type"] == "tool_result")
+    assert result["is_error"]
+    assert result["output"] == "The gateway rejected the call: Unknown tool: stock__get_stock. It did not run."
+    assert events[-1]["type"] == "done"
+    [output] = outputs(model.requests[1])
+    assert "did not run" in str(output["output"])
+    assert gateway.fake.audit == [{"user": "user-a", "tool": "stock__get_stock", "arguments": {"product_name": "Shin Guards"}, "outcome": "rejected"}]
+
+
 async def test_made_up_tool_name_goes_back_to_the_model(gateway):
     agent, model = make(gateway, [[call("u", "woo__delete_everything")], [say("I can't do that.")]])
     events = await run(agent, [], "delete everything")
@@ -163,6 +180,18 @@ def _revoke_after_connect(connect, gateway):
     async def wrapped(url, credential, timeout, *rest):
         async with connect(url, credential, timeout, *rest) as server:
             gateway.fake.revoked.add(credential)
+            yield server
+
+    return wrapped
+
+
+def _disable_after_connect(connect, gateway, prefix: str):
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def wrapped(url, credential, timeout, *rest):
+        async with connect(url, credential, timeout, *rest) as server:  # this lists the tools
+            gateway.fake.disabled.add(prefix)
             yield server
 
     return wrapped

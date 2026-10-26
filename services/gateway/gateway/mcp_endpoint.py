@@ -27,7 +27,7 @@ from sqlalchemy import select
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from gateway import toolsearch
-from gateway.core import Gateway, Identity
+from gateway.core import Gateway, Identity, UnknownTool
 from gateway.db import ApiKey, Database, LoginSession, User, utcnow
 from gateway.oauth import ACCESS_PREFIX, SCOPE, GatewayOAuthProvider
 from gateway.security import ChatTokens, sha256_hex
@@ -66,7 +66,12 @@ def build_server(gateway: Gateway) -> Server:
             return await toolsearch.search(gateway, who, params.arguments or {})
         if params.name == toolsearch.CALL:
             return await toolsearch.call(gateway, who, params.arguments or {})
-        return await gateway.call_tool(who, params.name, params.arguments)
+        try:
+            return await gateway.call_tool(who, params.name, params.arguments)
+        except UnknownTool as exc:
+            # A protocol error, not a tool result: the MCP spec answers an unknown tool
+            # with JSON-RPC "invalid params". The call was audited before this.
+            raise MCPError(code=types.INVALID_PARAMS, message=str(exc)) from None
 
     return Server(
         "urumi-gateway",

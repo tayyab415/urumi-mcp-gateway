@@ -152,9 +152,9 @@ class GatewayServer(MCPServerStreamableHttp):
         if self.auth.rejected:
             return "The gateway no longer accepts this user's credential. The call did not run."
         if isinstance(cause, MCPError):
-            # Any other protocol error is the gateway refusing the call: unknown
-            # tool, disabled server, not allowed for this user. It did not run.
-            return f"The gateway rejected the call: {cause.message}"
+            # Any other protocol error is the gateway refusing the call, such as a
+            # tool this user cannot use ("Unknown tool: ..."). It did not run.
+            return f"The gateway rejected the call: {cause.message}. It did not run."
         return _UNKNOWN_OUTCOME.format(reason=f"Lost the connection to the gateway ({type(cause).__name__})")
 
 

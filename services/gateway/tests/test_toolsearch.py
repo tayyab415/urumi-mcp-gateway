@@ -67,8 +67,9 @@ async def test_search_mode(tmp_path):
 
                     ok = await bob.call_tool("gateway__call_tool", {"name": "beta__list_products", "arguments": {}})
                     assert not ok.is_error and "supplier ball" in str(ok.structured_content or ok.content)
+                    # A tool Bob may not use reads exactly like one that does not exist.
                     denied = await bob.call_tool("gateway__call_tool", {"name": "alpha__create_thing", "arguments": {"name": "x"}})
-                    assert denied.is_error and "not allowed" in denied.content[0].text
+                    assert denied.is_error and denied.content[0].text.startswith("Unknown tool: alpha__create_thing.")
                     # Refusals of the wrapper itself, and an empty search.
                     assert (await bob.call_tool("gateway__call_tool", {"name": "gateway__search_tools", "arguments": {}})).is_error
                     assert (await bob.call_tool("gateway__search_tools", {"query": " "})).is_error

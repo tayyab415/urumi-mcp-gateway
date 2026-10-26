@@ -64,8 +64,21 @@ class Identity:
 
 # How a tools/call ends: `finish(outcome, result, error)` fills in the audit row and
 # returns the result. `route(event, finish)` is the work done under that row.
-Finish = Callable[..., types.CallToolResult]
-Route = Callable[[AuditEvent, Finish], Awaitable[types.CallToolResult]]
+Finish = Callable[..., types.CallToolResult | None]
+Route = Callable[[AuditEvent, Finish], Awaitable[types.CallToolResult | None]]
+
+
+class UnknownTool(Exception):
+    """The caller named a tool they cannot use: it does not exist, or it is not theirs.
+
+    Both get this one answer, so it never reveals which tools exist. The MCP
+    endpoint sends it as a JSON-RPC error, as the MCP spec does for unknown
+    tools. The audit row still records which case it was.
+    """
+
+    def __init__(self, name: str):
+        super().__init__(f"Unknown tool: {name}")
+        self.name = name
 
 
 def public_name(slug: str, tool: str) -> str:
@@ -281,10 +294,10 @@ class Gateway:
     # ---------------------------------------------------------------- tool call
 
     async def call_tool(self, who: Identity, name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
-        """Authorize, route, time-limit and audit one tool call."""
+        """Authorize, route, time-limit and audit one tool call. Raises UnknownTool."""
         arguments = arguments or {}
 
-        async def route(event: AuditEvent, finish: Finish) -> types.CallToolResult:
+        async def route(event: AuditEvent, finish: Finish) -> types.CallToolResult | None:
             return await self._route(who, name, arguments, event, finish)
 
         return await self.audited(who, name, arguments, route)
@@ -295,6 +308,8 @@ class Gateway:
         Every tools/call the gateway answers comes through here: upstream tools
         (`call_tool`) and the gateway's own search-mode tools (toolsearch.py).
         `route(event, finish)` does the work and returns `finish(outcome, result, error)`.
+        A result of None means "no such tool for this caller": the row is
+        written, then UnknownTool is raised.
         """
         started = time.monotonic()
         event = AuditEvent(
@@ -310,7 +325,7 @@ class Gateway:
         if parts := split_name(name):
             event.server_slug, event.tool_name = parts[0][:32], parts[1][:128]
 
-        def finish(outcome: str, result: types.CallToolResult, error: str | None = None) -> types.CallToolResult:
+        def finish(outcome: str, result: types.CallToolResult | None, error: str | None = None) -> types.CallToolResult | None:
             event.outcome = outcome
             event.error = error
             event.duration_ms = int((time.monotonic() - started) * 1000)
@@ -324,12 +339,14 @@ class Gateway:
                 event.outcome, event.duration_ms = "aborted", int((time.monotonic() - started) * 1000)
             with anyio.CancelScope(shield=True):
                 await self._record(event)
+        if result is None:
+            raise UnknownTool(name)
         return result
 
-    async def _route(self, who: Identity, name: str, arguments: dict[str, Any], event: AuditEvent, finish: Finish) -> types.CallToolResult:
+    async def _route(self, who: Identity, name: str, arguments: dict[str, Any], event: AuditEvent, finish: Finish) -> types.CallToolResult | None:
         parts = split_name(name)
         if parts is None:
-            return finish("unknown_tool", _error(f"Unknown tool {name!r}. Tool names look like 'server__tool'."), "malformed name")
+            return finish("unknown_tool", None, "malformed name")
         slug, tool_name = parts
 
         # Fresh read on every call: a client holding an old tool list cannot use
@@ -341,15 +358,18 @@ class Gateway:
                 tool = await s.scalar(select(Tool).where(Tool.server_id == server.id, Tool.name == tool_name))
 
         if server is None or tool is None or not tool.present or not may_use_server(server, who):
-            return finish("unknown_tool", _error(f"Unknown tool {name!r}."), "not in catalog")
+            return finish("unknown_tool", None, "not in catalog")
+        # A tool this caller's role may not use gets the same answer as one that does not
+        # exist, so a refusal never tells anyone which tools exist. The row keeps the reason.
+        # It is checked before the disabled and held checks for the same reason.
+        if who.role not in tool.allowed_roles:
+            return finish("denied", None, "role not allowed")
         if not server.enabled:
             return finish("disabled", _error(f"The {server.name} server is disabled by an admin."), "server disabled")
         if pending_review(tool):
             return finish("pending_review", _error(
                 f"{name} is held back: the {server.name} server changed what this tool says it does, or added it, "
                 "after an admin last reviewed it. An admin can review and approve it on the Permissions page."), "definition not approved")
-        if who.role not in tool.allowed_roles:
-            return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
 
         # The row is written before the request goes out, and completed when it returns.
         # If the gateway dies in between, the row stays "pending" and the next start marks

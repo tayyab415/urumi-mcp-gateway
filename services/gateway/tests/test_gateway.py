@@ -22,6 +22,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.exceptions import MCPError
 import mcp_types as types
 from mcp_types import ToolAnnotations
 from fastapi import HTTPException
@@ -195,10 +196,24 @@ async def test_gateway_definition_of_done(tmp_path):
                 b = await bob.call_tool("beta__list_products", {})
                 assert "ball" in str(a.structured_content) and "supplier ball" in str(b.structured_content)
 
-                # --- calling a hidden tool directly is still refused
-                denied = await bob.call_tool("alpha__create_thing", {"name": "x"})
-                assert denied.is_error and "not allowed" in denied.content[0].text
+                # --- calling a hidden tool directly is still refused, with the JSON-RPC error an
+                # unknown tool gets (MCP spec: -32602), so the answer does not say the tool exists
+                with pytest.raises(MCPError) as denied:
+                    await bob.call_tool("alpha__create_thing", {"name": "x"})
+                with pytest.raises(MCPError) as unknown:
+                    await bob.call_tool("alpha__no_such_tool", {})
+                assert denied.value.code == unknown.value.code == types.INVALID_PARAMS
+                assert denied.value.message == "Unknown tool: alpha__create_thing"
+                assert unknown.value.message == "Unknown tool: alpha__no_such_tool"
                 assert not (await root.call_tool("alpha__create_thing", {"name": "x"})).is_error
+
+                # On the wire (a bare request, as curl sends it): an "error" member, not a result with isError.
+                raw = await httpx2.AsyncClient().post(
+                    f"{gw}/mcp", headers={"Authorization": f"Bearer {member_key['key']}", "Accept": "application/json, text/event-stream"},
+                    json={"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "review__no_such_tool", "arguments": {}}},
+                )
+                assert "result" not in raw.json(), raw.text
+                assert raw.json()["error"]["code"] == -32602 and raw.json()["error"]["message"] == "Unknown tool: review__no_such_tool"
 
                 # --- a slow upstream times out without holding up a healthy one
                 async def slow_call(results: dict) -> None:
@@ -254,6 +269,8 @@ async def test_gateway_definition_of_done(tmp_path):
             events = (await admin.get("/api/audit", params={"limit": 500})).json()
             by_outcome = {(e["user_email"], e["public_name"], e["outcome"]) for e in events}
             assert ("bob@example.com", "alpha__create_thing", "denied") in by_outcome
+            assert ("bob@example.com", "alpha__no_such_tool", "unknown_tool") in by_outcome
+            assert ("bob@example.com", "review__no_such_tool", "unknown_tool") in by_outcome
             assert ("admin@example.com", "alpha__create_thing", "ok") in by_outcome
             assert ("bob@example.com", "beta__slow", "timeout") in by_outcome
             assert ("bob@example.com", "beta__list_products", "disabled") in by_outcome
@@ -359,7 +376,8 @@ async def test_dashboard_helpers_test_connection_and_audit_views(tmp_path):
             async with mcp_client(gw, admin_key) as root:
                 await root.call_tool("alpha__list_products", {})
                 await root.call_tool("alpha__create_thing", {"name": "x"})
-                await root.call_tool("nope__missing", {})
+                with pytest.raises(MCPError):
+                    await root.call_tool("nope__missing", {})
             token = (await admin.post("/api/auth/chat-token")).json()["token"]
             async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}", "X-Urumi-Chat-Id": "conv-9"}) as http:
                 async with Client(streamable_http_client(f"{gw}/mcp", http_client=http), cache=None) as chat:

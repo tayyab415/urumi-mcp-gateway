@@ -132,8 +132,10 @@ class FakeGateway:
         row = {"user": user, "tool": params.name, "arguments": args}
         self.audit.append(row)
         if not any(t.name == params.name for t in TOOLS) or not self._enabled(params.name):
+            # The real gateway's answer for a tool the caller cannot use: a JSON-RPC
+            # error, the same for a tool that does not exist and one that is not theirs.
             row["outcome"] = "rejected"
-            raise MCPError(code=-32602, message=f"Unknown or disabled tool: {params.name}")
+            raise MCPError(code=-32602, message=f"Unknown tool: {params.name}")
         result = await self._run(params.name, args)
         row["outcome"] = "error" if result.get("error") else "ok"
         return types.CallToolResult(

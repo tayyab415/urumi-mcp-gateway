@@ -36,7 +36,7 @@ from typing import Any
 
 import mcp_types as types
 
-from gateway.core import Finish, Gateway, Identity, clean_description, public_name
+from gateway.core import Finish, Gateway, Identity, UnknownTool, clean_description, public_name
 
 SEARCH = "gateway__search_tools"
 CALL = "gateway__call_tool"
@@ -177,7 +177,13 @@ async def call(gateway: Gateway, who: Identity, arguments: dict[str, Any]) -> ty
 
         return await gateway.audited(_through_search(who), CALL, arguments, refuse)
     # One row, under the real tool's name and marked as reached through search.
-    return await gateway.call_tool(_through_search(who), name, inner)
+    try:
+        return await gateway.call_tool(_through_search(who), name, inner)
+    except UnknownTool:
+        # Here the tool being called is gateway__call_tool, which exists; a name it cannot
+        # use is a bad argument, answered as a tool error so the model can search again.
+        # Unknown and not-yours read the same, as on a direct call.
+        return _error(f"Unknown tool: {name}. Use a name {SEARCH} returned.")
 
 
 def _error(message: str) -> types.CallToolResult:
