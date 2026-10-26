@@ -10,7 +10,8 @@ sorted into kinds the rest of the gateway can explain to a person or a model:
     unreachable   could not connect; the upstream never saw the request
     timeout       sent, but no answer before the deadline; the outcome is unknown
     auth_failed   the upstream rejected the credential the gateway stored for it
-    protocol      the upstream answered with something that is not a valid MCP reply
+    protocol      the upstream answered with something that is not a valid MCP reply,
+                  or with more than MAX_RESPONSE_BYTES
 """
 
 from __future__ import annotations
@@ -40,6 +41,11 @@ CLIENT_INFO = types.Implementation(name="urumi-gateway", version="0.1.0")
 # Building a TLS context loads the CA bundle, which costs 150-450 ms. Each call
 # opens a new HTTP client, so they all share this one context.
 _TLS = ssl.create_default_context()
+
+# The most an upstream may send during one discovery or call. The result cap
+# (core.MAX_RESULT_CHARS) applies to what the gateway parsed; this limit stops
+# a hostile upstream from making it read and parse gigabytes to get there.
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 _CGNAT = ipaddress.ip_network("100.64.0.0/10")  # also Alibaba Cloud's metadata address
@@ -110,6 +116,54 @@ class Discovery:
     latency_ms: int
 
 
+class _Oversized(httpx2.StreamError):
+    """Raised while the response is read. The MCP client reports it as a failed read."""
+
+
+class _ByteBudget:
+    """Counts what an upstream sends during one exchange, and stops reading past the limit.
+
+    It wraps each response's byte stream before anything reads it, so the body is
+    never buffered whole. Compressed bodies are refused: counting compressed bytes
+    would not bound what they expand to, and the gateway asks for none.
+    """
+
+    def __init__(self, target: Target, limit: int):
+        self.slug, self.limit, self.left = target.slug, limit, limit
+        self.problem: str | None = None
+
+    def watch(self, response: httpx2.Response) -> None:
+        encoding = response.headers.get("content-encoding", "").strip().lower()
+        refuse = None
+        if encoding not in ("", "identity"):
+            refuse = f"{self.slug} sent a compressed answer ({encoding}), which the gateway did not ask for and does not read."
+        response.stream = _CountedStream(response.stream, self, refuse)  # type: ignore[arg-type]
+
+    def fail(self, problem: str) -> _Oversized:
+        self.problem = problem
+        return _Oversized(problem)
+
+
+class _CountedStream(httpx2.AsyncByteStream):
+    def __init__(self, inner: Any, budget: _ByteBudget, refuse: str | None):
+        self.inner, self.budget, self.refuse = inner, budget, refuse
+
+    async def __aiter__(self):  # noqa: ANN204
+        if self.refuse:
+            raise self.budget.fail(self.refuse)
+        async for chunk in self.inner:
+            self.budget.left -= len(chunk)
+            if self.budget.left < 0:
+                raise self.budget.fail(
+                    f"{self.budget.slug} sent more than {self.budget.limit // (1024 * 1024)} MiB in one answer; "
+                    "the gateway stopped reading it."
+                )
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
 def _mode(target: Target) -> str:
     # Reuse what discovery learned, to skip the version probe on every call.
     if target.protocol_version in MODERN_PROTOCOL_VERSIONS:
@@ -144,15 +198,17 @@ def _classify(exc: Exception, statuses: list[int], target: Target) -> UpstreamFa
 
 async def _exchange(target: Target, work: Callable[[Client], Awaitable[T]]) -> tuple[T, str]:
     statuses: list[int] = []
+    budget = _ByteBudget(target, MAX_RESPONSE_BYTES)
 
     async def record(response: httpx2.Response) -> None:
         statuses.append(response.status_code)
+        budget.watch(response)
 
     try:
         with anyio.fail_after(target.timeout):
             await check_target_address(target, target.allow_loopback)
             async with httpx2.AsyncClient(
-                headers=target.headers,
+                headers={"Accept-Encoding": "identity", **target.headers},
                 verify=_TLS,
                 # The deadline above is the real limit; this only stops a socket hanging past it.
                 timeout=httpx2.Timeout(target.timeout + 5),
@@ -163,8 +219,13 @@ async def _exchange(target: Target, work: Callable[[Client], Awaitable[T]]) -> t
                     result = await work(client)
                     return result, client.protocol_version
     except TimeoutError:
+        if budget.problem:
+            raise UpstreamFailure("protocol", budget.problem) from None
         raise UpstreamFailure("timeout", f"{target.slug} did not answer within {target.timeout:g}s.") from None
     except Exception as exc:  # ExceptionGroups from the transport's task group land here
+        if budget.problem:
+            # The SDK reports the stopped read as a parse error; say what really happened.
+            raise UpstreamFailure("protocol", budget.problem) from exc
         raise _classify(exc, statuses, target) from exc
 
 

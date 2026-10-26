@@ -109,7 +109,9 @@ def default_roles(annotations: types.ToolAnnotations | None) -> list[str]:
     return ["admin"]
 
 
-MAX_RESULT_CHARS = 256_000  # per call; a hostile or buggy upstream must not flood the model's context
+# Per call, measured over the whole result as JSON; a hostile or buggy upstream must
+# not flood the model's context (or the gateway's memory) with text, images or data.
+MAX_RESULT_CHARS = 256_000
 
 
 def may_use_server(server: Server, who: Identity) -> bool:
@@ -338,16 +340,18 @@ class Gateway:
             return finish(failure.kind, _error(message), failure.message)
 
         await self._note_health(server.id, None)
-        result = _capped(result)
-        if result.is_error:
+        upstream_error = result.is_error
+        capped = _capped(result, has_output_schema=bool(tool.output_schema))
+        if upstream_error:
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text=tidy_error_text(c.text)) if isinstance(c, types.TextContent) else c for c in result.content],
+                content=[types.TextContent(type="text", text=tidy_error_text(c.text)) if isinstance(c, types.TextContent) else c for c in capped.content],
                 is_error=True,
-                structured_content=result.structured_content,
+                structured_content=capped.structured_content,
             )
             text = " ".join(c.text for c in result.content if isinstance(c, types.TextContent))
             return finish("tool_error", result, text[:1000] or "upstream reported an error")
-        return finish("ok", result)
+        # The call worked; a cut result is noted in the audit row, without any of its data.
+        return finish("ok", capped, None if capped is result else "result cut to the size limit")
 
     async def _note_health(self, server_id: int, failure: upstreams.UpstreamFailure | None) -> None:
         """Let real calls update the status page, not only the periodic refresh."""
@@ -397,24 +401,81 @@ def tidy_error_text(text: str) -> str:
     return f"Invalid arguments for {m.group(1)}. " + "; ".join(problems) + "."
 
 
-def _capped(result: types.CallToolResult) -> types.CallToolResult:
-    """Cut text content past MAX_RESULT_CHARS, and say so, instead of passing it all to the model."""
-    total, content, cut = 0, [], False
-    for c in result.content:
-        if isinstance(c, types.TextContent):
-            room = MAX_RESULT_CHARS - total
-            if len(c.text) > room:
-                c = types.TextContent(type="text", text=c.text[: max(room, 0)])
-                cut = True
-            total += len(c.text)
-        content.append(c)
-        if cut:
-            break
-    if not cut:
+def _json_size(model: Any) -> int:
+    return len(model.model_dump_json(by_alias=True, exclude_none=True))
+
+
+_EMPTY_TEXT_SIZE = _json_size(types.TextContent(type="text", text="")) + 1  # the block, and a comma
+_CAP_RESERVE = 1_000  # for the result's own fields and the gateway's note
+_PART_NAMES = {"text": "text", "image": "an image", "audio": "audio", "resource": "an embedded resource",
+               "resource_link": "a resource link"}
+
+
+def _fit_text(text: str, room: int) -> str:
+    """The longest start of `text` whose JSON form fits in `room` characters."""
+
+    def cost(n: int) -> int:
+        return len(json.dumps(text[:n], ensure_ascii=False)) - 2
+
+    # Quotes, backslashes and control characters take more than one character in
+    # JSON, so the length is found by halving: about 18 tries for 256,000 characters.
+    low, high = 0, min(len(text), max(room, 0))
+    while low < high:
+        middle = (low + high + 1) // 2
+        if cost(middle) <= room:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+def _capped(result: types.CallToolResult, has_output_schema: bool = False) -> types.CallToolResult:
+    """Keep the whole result within MAX_RESULT_CHARS of JSON, and say what was cut.
+
+    Every part counts, not only text: images and audio (their base64 data),
+    embedded resources, structured content and metadata. Text is cut short. A
+    part that cannot be cut sensibly, such as an image or the structured
+    content, is left out whole.
+    """
+    size = _json_size(result)
+    if size <= MAX_RESULT_CHARS:
         return result
-    content.append(types.TextContent(type="text", text=f"[gateway: result truncated at {MAX_RESULT_CHARS} characters]"))
-    structured = result.structured_content if len(json.dumps(result.structured_content or {}, default=str)) <= MAX_RESULT_CHARS else None
-    return types.CallToolResult(content=content, is_error=result.is_error, structured_content=structured)
+    room = MAX_RESULT_CHARS - _CAP_RESERVE
+    content: list[Any] = []
+    left_out: list[str] = []
+    for part in result.content:
+        cost = _json_size(part) + 1
+        if cost <= room:
+            content.append(part)
+            room -= cost
+        elif isinstance(part, types.TextContent) and room > _EMPTY_TEXT_SIZE:
+            content.append(types.TextContent(type="text", text=_fit_text(part.text, room - _EMPTY_TEXT_SIZE)))
+            room -= _json_size(content[-1]) + 1
+            left_out.append("the rest of the text")
+        else:
+            left_out.append(_PART_NAMES.get(part.type, part.type))
+    structured = result.structured_content
+    if structured is not None:
+        cost = len(json.dumps(structured, ensure_ascii=False, default=str)) + len('"structuredContent":,')
+        if cost <= room:
+            room -= cost
+        else:
+            structured = None
+            left_out.append("the structured content")
+    meta = result.meta
+    if meta and len(json.dumps(meta, ensure_ascii=False, default=str)) + len('"_meta":,') > room:
+        meta = None
+        left_out.append("the metadata")
+    content.append(types.TextContent(type="text", text=(
+        f"[gateway: result truncated to fit the {MAX_RESULT_CHARS}-character limit (it was {size}). "
+        f"Left out: {', '.join(dict.fromkeys(left_out))}. Ask for less, for example a narrower filter.]"
+    )))
+    # A client checks structured content against the tool's output schema, and refuses a
+    # successful result that has none. Marking the cut result as an error tells it, and the
+    # model, that this is a partial answer rather than a broken tool.
+    dropped_structured = result.structured_content is not None and structured is None
+    return types.CallToolResult(content=content, structured_content=structured, meta=meta,
+                                is_error=result.is_error or (has_output_schema and dropped_structured))
 
 
 def _error(message: str) -> types.CallToolResult:
