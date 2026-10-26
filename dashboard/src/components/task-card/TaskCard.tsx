@@ -29,6 +29,16 @@ export interface TaskCardProps {
 const stepWords = (s: ChatStep) => toolWords(s.name, s.input, s.readOnly);
 
 /** One card per task. Steps stream in; the live one is marked by weight; a write stops on a review row; a finished run folds. */
+/** "Calling" -> "Call", "Updating" -> "Update": the approval card states the change as an instruction.
+ *  Spelled out per verb, because English drops or doubles letters irregularly. */
+const IMPERATIVE: Record<string, string> = {
+  Adding: "Add", Calling: "Call", Cancelling: "Cancel", Changing: "Change", Creating: "Create", Deleting: "Delete",
+  Fetching: "Fetch", Finding: "Find", Listing: "List", Quoting: "Quote", Reading: "Read", Refunding: "Refund",
+  Removing: "Remove", Restocking: "Restock", Running: "Run", Searching: "Search", Sending: "Send", Setting: "Set",
+  Tracking: "Track", Updating: "Update",
+};
+const imperative = (verb: string) => IMPERATIVE[verb] ?? verb.replace(/ing$/, "");
+
 export function TaskCard({ turn, modelLabel, modelIsAnthropic, compact, onApprove, onDeny, onReplay, onOpenRun }: TaskCardProps) {
   const reduced = useReducedFlag();
   const [folded, setFolded] = useState(false);
@@ -243,7 +253,7 @@ function ReviewBlock({ step, turn, onApprove, onDeny, onOpenRun, compact }: { st
   }, [step.id, reduced]);
   const consequence = words.kind === "create"
     ? `Create a new ${words.noun}${words.argument ? ` called ${words.argument}` : ""} on ${step.approval?.server ?? titleCase(words.server)}.`
-    : `${words.verb.replace(/ing$/, "e").replace(/ee$/, "e")} ${words.argument || words.noun} on ${step.approval?.server ?? titleCase(words.server)}. This cannot be undone from here.`;
+    : `${imperative(words.verb)} ${words.argument || words.noun} on ${step.approval?.server ?? titleCase(words.server)}. This cannot be undone from here.`;
   const deciding = Boolean(step.approval?.deciding);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={fade}>

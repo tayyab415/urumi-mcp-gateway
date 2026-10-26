@@ -25,5 +25,17 @@
 		header_down Location ^https://{$UPSTREAM_HOST} {$PUBLIC_URL}
 		# Chat answers and MCP responses stream; pass every write on at once.
 		flush_interval -1
+		# HTTP/1.1 with short-lived idle connections. Over HTTP/2, a request could
+		# race the VM closing an idle connection and come back as a 502.
+		transport http {
+			versions 1.1
+			keepalive 30s
+		}
+	}
+	# Proxy errors go to Cloud Run's logs, with the reason.
+	log {
+		output stderr
+		format json
+		level ERROR
 	}
 }
