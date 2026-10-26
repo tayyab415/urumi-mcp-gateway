@@ -69,9 +69,24 @@ async def test_search_mode(tmp_path):
                     assert not ok.is_error and "supplier ball" in str(ok.structured_content or ok.content)
                     denied = await bob.call_tool("gateway__call_tool", {"name": "alpha__create_thing", "arguments": {"name": "x"}})
                     assert denied.is_error and "not allowed" in denied.content[0].text
+                    # Refusals of the wrapper itself, and an empty search.
+                    assert (await bob.call_tool("gateway__call_tool", {"name": "gateway__search_tools", "arguments": {}})).is_error
+                    assert (await bob.call_tool("gateway__search_tools", {"query": " "})).is_error
 
+            # One row per tools/call: searches, the calls they led to and the refusals.
             audit = (await admin.get("/api/audit")).json()
-            rows = {(e["public_name"], e["outcome"], e["via"]) for e in audit}
-            assert ("beta__list_products", "ok", "mcp-search") in rows
-            assert ("alpha__create_thing", "denied", "mcp-search") in rows
+            rows = [(e["public_name"], e["outcome"], e["via"]) for e in reversed(audit)]
+            assert rows == [
+                ("gateway__search_tools", "ok", "mcp-search"),
+                ("gateway__search_tools", "ok", "mcp-search"),
+                ("beta__list_products", "ok", "mcp-search"),
+                ("alpha__create_thing", "denied", "mcp-search"),
+                ("gateway__call_tool", "invalid_arguments", "mcp-search"),
+                ("gateway__search_tools", "invalid_arguments", "mcp-search"),
+            ]
+            assert audit[-1]["server"] == "gateway" and audit[-1]["tool"] == "search_tools"
+            assert '"query": "products"' in audit[-1]["arguments"] and all(e["user_email"] == "bob@example.com" for e in audit)
+            # "MCP clients only" on the Audit page includes search mode.
+            assert (await admin.get("/api/audit", params={"via": "mcp"})).json() == audit
+            assert (await admin.get("/api/audit", params={"via": "chat"})).json() == []
             tg.cancel_scope.cancel()

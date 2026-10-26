@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Literal
@@ -59,6 +60,12 @@ class Identity:
     name: str = ""
     # "search": tools/list returns the two search-mode tools (toolsearch.py) instead of every tool.
     tool_mode: Literal["all", "search"] = "all"
+
+
+# How a tools/call ends: `finish(outcome, result, error)` fills in the audit row and
+# returns the result. `route(event, finish)` is the work done under that row.
+Finish = Callable[..., types.CallToolResult]
+Route = Callable[[AuditEvent, Finish], Awaitable[types.CallToolResult]]
 
 
 def public_name(slug: str, tool: str) -> str:
@@ -276,6 +283,19 @@ class Gateway:
     async def call_tool(self, who: Identity, name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
         """Authorize, route, time-limit and audit one tool call."""
         arguments = arguments or {}
+
+        async def route(event: AuditEvent, finish: Finish) -> types.CallToolResult:
+            return await self._route(who, name, arguments, event, finish)
+
+        return await self.audited(who, name, arguments, route)
+
+    async def audited(self, who: Identity, name: str, arguments: dict[str, Any], route: Route) -> types.CallToolResult:
+        """Run one tools/call under exactly one audit row, however it ends.
+
+        Every tools/call the gateway answers comes through here: upstream tools
+        (`call_tool`) and the gateway's own search-mode tools (toolsearch.py).
+        `route(event, finish)` does the work and returns `finish(outcome, result, error)`.
+        """
         started = time.monotonic()
         event = AuditEvent(
             started_at=utcnow(),
@@ -287,6 +307,8 @@ class Gateway:
             public_name=name[:200],
             arguments=_truncate_json(arguments),
         )
+        if parts := split_name(name):
+            event.server_slug, event.tool_name = parts[0][:32], parts[1][:128]
 
         def finish(outcome: str, result: types.CallToolResult, error: str | None = None) -> types.CallToolResult:
             event.outcome = outcome
@@ -295,7 +317,7 @@ class Gateway:
             return result
 
         try:
-            result = await self._route(who, name, arguments, event, finish)
+            result = await route(event, finish)
         finally:
             if getattr(event, "outcome", None) in (None, PENDING):
                 # Cancelled (client went away) or failed mid-call: record that too.
@@ -304,12 +326,11 @@ class Gateway:
                 await self._record(event)
         return result
 
-    async def _route(self, who, name, arguments, event, finish) -> types.CallToolResult:  # noqa: ANN001
+    async def _route(self, who: Identity, name: str, arguments: dict[str, Any], event: AuditEvent, finish: Finish) -> types.CallToolResult:
         parts = split_name(name)
         if parts is None:
             return finish("unknown_tool", _error(f"Unknown tool {name!r}. Tool names look like 'server__tool'."), "malformed name")
         slug, tool_name = parts
-        event.server_slug, event.tool_name = slug[:32], tool_name[:128]
 
         # Fresh read on every call: a client holding an old tool list cannot use
         # a server that has since been disabled, or a tool it has lost access to.

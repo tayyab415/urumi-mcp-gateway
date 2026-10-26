@@ -717,7 +717,8 @@ def build_router(settings: Settings) -> APIRouter:
         if outcome:
             q = q.where(AuditEvent.outcome == outcome)
         if via:
-            q = q.where(AuditEvent.via == via)
+            # Search mode (/mcp/search) is the same door, so "mcp" also covers "mcp-search".
+            q = q.where(AuditEvent.via.in_((via, f"{via}-search")))
         if chat_id:
             q = q.where(AuditEvent.chat_id == chat_id)
         if before_id:
