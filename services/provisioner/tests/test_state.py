@@ -54,6 +54,14 @@ def test_ready_store_reports_degraded_but_stays_ready():
     assert next_phase("Ready", now, None, seen) == ("Ready", "Degraded: woo-mcp (CrashLoopBackOff)")
 
 
+def test_a_delete_request_outranks_any_phase_written_after_it():
+    asked = {state.ANN_DELETE: "2026-10-26T12:00:00Z"}
+    for written in ("Provisioning", "Ready", "Failed"):
+        assert state.phase_of({**asked, state.ANN_PHASE: written}) == "Deleting"
+    assert state.phase_of({state.ANN_PHASE: "Ready"}) == "Ready"
+    assert state.phase_of({}) == "Provisioning" and state.phase_of({}, terminating=True) == "Deleting"
+
+
 def test_iso_round_trip():
     now = state.now_utc()
     assert state.parse_iso(state.iso(now)) == now
