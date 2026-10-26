@@ -168,6 +168,97 @@ class AuditEvent(Base):
     chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+# ---------------------------------------------------------------- OAuth
+#
+# The gateway is its own OAuth authorization server for MCP clients (oauth.py).
+# Codes and tokens are stored as SHA-256 hashes, like API keys. The plaintext
+# exists once, in the response that hands it to the client.
+
+
+class OAuthClient(Base):
+    """An app that registered itself (RFC 7591). Public client: no secret is ever issued."""
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), default="")  # shown on the consent page and in the audit log
+    info_json: Mapped[str] = mapped_column(Text)  # the registered metadata, as the SDK model serialises it
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # Set when a person first approves this client. Clients that never get approved are purged.
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthGrant(Base):
+    """One person's approval of one app: what the Connected apps list shows and Disconnect removes."""
+
+    __tablename__ = "oauth_grants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), index=True)
+    authorized_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)  # the latest consent
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthRequest(Base):
+    """An authorization request waiting for a person to log in and press Allow or Deny."""
+
+    __tablename__ = "oauth_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64), unique=True)  # the id in the consent URL
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), index=True)
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    redirect_explicit: Mapped[bool] = mapped_column(Boolean)
+    state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scopes: Mapped[list[str]] = mapped_column(JSON)
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    resource: Mapped[str] = mapped_column(String(500))
+    csrf_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # of the token in the last form shown
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class OAuthCode(Base):
+    """An authorization code. Single use, five minutes."""
+
+    __tablename__ = "oauth_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    grant_id: Mapped[int] = mapped_column(ForeignKey("oauth_grants.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(Integer)
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    redirect_explicit: Mapped[bool] = mapped_column(Boolean)
+    scopes: Mapped[list[str]] = mapped_column(JSON)
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    resource: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthToken(Base):
+    """An access token (about an hour) or a refresh token (30 days, replaced each time it is used)."""
+
+    __tablename__ = "oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    kind: Mapped[str] = mapped_column(String(8))  # access | refresh
+    grant_id: Mapped[int] = mapped_column(ForeignKey("oauth_grants.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(Integer)
+    scopes: Mapped[list[str]] = mapped_column(JSON)
+    resource: Mapped[str | None] = mapped_column(String(500), nullable=True)  # RFC 8707 audience
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # a refresh token, once exchanged
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 def add_missing_columns(conn: Connection) -> None:
     """Add columns that a newer version of a model has and an older database lacks.
 

@@ -104,8 +104,8 @@ def free_port() -> int:
 
 
 @asynccontextmanager
-async def serving(tg: anyio.abc.TaskGroup, app: Any) -> AsyncIterator[tuple[str, uvicorn.Server]]:
-    port = free_port()
+async def serving(tg: anyio.abc.TaskGroup, app: Any, port: int | None = None) -> AsyncIterator[tuple[str, uvicorn.Server]]:
+    port = port or free_port()  # a test passes the port when the app must know its own public URL
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="on"))
     tg.start_soon(server.serve)
     with anyio.fail_after(10):

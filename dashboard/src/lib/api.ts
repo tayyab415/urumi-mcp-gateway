@@ -62,6 +62,8 @@ export interface User {
 
 export interface Me extends User {
   mcp_url: string;
+  /** False when the gateway's public URL is plain http, so browser sign-in for MCP clients is off. */
+  oauth_enabled?: boolean;
 }
 
 export type ServerHealth = "ok" | "down" | "auth_failed" | "unknown" | string;
@@ -116,6 +118,16 @@ export interface ApiKey {
   created_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
+}
+
+/** An app a person signed in to by browser (OAuth). Disconnecting it ends its tokens. */
+export interface OAuthGrant {
+  id: number;
+  client_id: string;
+  client_name: string;
+  user_email: string;
+  created_at: string | null;
+  last_used_at: string | null;
 }
 
 export interface NewKey {
@@ -252,6 +264,10 @@ export const api = {
     list: (all = false) => http.get<ApiKey[]>(`/api/keys${all ? "?all=true" : ""}`),
     create: (name: string) => http.post<NewKey>("/api/keys", { name }),
     revoke: (id: number) => http.del<{ ok: boolean }>(`/api/keys/${id}`),
+  },
+  oauth: {
+    grants: (all = false) => http.get<OAuthGrant[]>(`/api/oauth/grants${all ? "?all=true" : ""}`),
+    disconnect: (id: number) => http.del<{ ok: boolean }>(`/api/oauth/grants/${id}`),
   },
   audit: {
     list: (params: { user_id?: number | null; server?: string | null; outcome?: string | null; via?: string | null; before_id?: number | null; after_id?: number | null; chat_id?: string | null; limit?: number }) =>

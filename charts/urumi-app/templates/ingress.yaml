@@ -2,11 +2,17 @@
        the Service. Traefik tries the longest matching rule first, so
        /api/auth/login and /api/chat win over /api.
 
-       There are four Ingresses rather than one because Traefik attaches
+       There are five Ingresses rather than one because Traefik attaches
        middlewares (rate limits) per Ingress, and these paths need different
-       limits. All four share the hostname and the certificate. Only the first
+       limits. All five share the hostname and the certificate. Only the first
        carries ingress.annotations, so cert-manager sees one owner for the
        certificate.
+
+       The gateway is also an OAuth authorization server for MCP clients. Its
+       paths must reach the gateway, or `/` would answer them with the
+       dashboard's HTML and a client's discovery would fail in a confusing way.
+       The metadata documents are plain reads. The rest take posts and write
+       rows, so they share the login limit.
 
        The MCP servers have no route here: only the gateway can reach them. */}}
 {{- $root := . }}
@@ -14,9 +20,17 @@
 {{- $ingresses := list
   (dict "name" "app" "annotations" .Values.ingress.annotations "paths" (list
     (dict "path" "/api" "service" "gateway")
+    (dict "path" "/.well-known/oauth-authorization-server" "service" "gateway")
+    (dict "path" "/.well-known/oauth-protected-resource" "service" "gateway")
     (dict "path" "/" "service" "dashboard")))
   (dict "name" "login" "limit" "login" "paths" (list
     (dict "path" "/api/auth/login" "type" "Exact" "service" "gateway")))
+  (dict "name" "oauth" "limit" "login" "paths" (list
+    (dict "path" "/authorize" "service" "gateway")
+    (dict "path" "/token" "service" "gateway")
+    (dict "path" "/register" "service" "gateway")
+    (dict "path" "/revoke" "service" "gateway")
+    (dict "path" "/oauth" "service" "gateway")))
   (dict "name" "mcp" "limit" "mcp" "paths" (list
     (dict "path" "/mcp" "service" "gateway")))
   (dict "name" "chat" "limit" "chat" "paths" (list

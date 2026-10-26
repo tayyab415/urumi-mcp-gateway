@@ -179,7 +179,9 @@ export function AuditPage() {
                               <div className={styles.detailMeta}>
                                 <span>{r.started_at ? fmtDateTime(r.started_at) : ""}</span>
                                 <span>server {splitTool(r.public_name).server || "?"}</span>
-                                {r.api_key_prefix && <span>key {r.api_key_prefix}…</span>}
+                                {r.api_key_prefix && (r.api_key_prefix.startsWith("oauth:")
+                                  ? <span>app {r.api_key_prefix.slice(6)} (browser sign-in)</span>
+                                  : <span>key {r.api_key_prefix}…</span>)}
                                 {r.chat_id && <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/audit?chat_id=${encodeURIComponent(r.chat_id!)}`); }} style={{ color: "var(--text-secondary)" }}>chat run {r.chat_id.slice(0, 8)} ↗</a>}
                               </div>
                               {r.error && <div className={styles.errorText}>{r.error}</div>}

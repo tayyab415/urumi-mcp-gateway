@@ -1,13 +1,13 @@
 """The gateway's MCP *server* side: the one endpoint external clients connect to.
 
 Every HTTP request to /mcp passes through `ApiKeyAuth` first. It resolves the
-API key to a person and attaches that identity to the request. The MCP handlers
-then read the identity from the request, never from anything the client sends
-inside the MCP message.
+API key (or OAuth access token) to a person and attaches that identity to the
+request. The MCP handlers then read the identity from the request, never from
+anything the client sends inside the MCP message.
 
-Because the key is checked on every HTTP request, not once per connection, a
-revoked key fails on its very next call, even from a client that connected
-before the revocation.
+Because the credential is checked on every HTTP request, not once per
+connection, a revoked key or a disconnected app fails on its very next call,
+even from a client that connected before the revocation.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from gateway import toolsearch
 from gateway.core import Gateway, Identity
 from gateway.db import ApiKey, Database, LoginSession, User, utcnow
+from gateway.oauth import ACCESS_PREFIX, SCOPE, GatewayOAuthProvider
 from gateway.security import ChatTokens, sha256_hex
 
 # JSON-RPC error code for "no valid credential", sent with HTTP 401. JSON-RPC
@@ -152,12 +153,22 @@ def _wants_search(scope: Scope) -> bool:
 
 
 class ApiKeyAuth:
-    """Accepts a user's API key (external clients) or a chat token (dashboard chat)."""
+    """Accepts a user's API key (external clients), an OAuth access token (browser sign-in) or a chat token (dashboard chat)."""
 
-    def __init__(self, app: ASGIApp, db: Database, chat_tokens: ChatTokens):
+    def __init__(self, app: ASGIApp, db: Database, chat_tokens: ChatTokens, oauth: GatewayOAuthProvider | None = None):
         self.app = app
         self.db = db
         self.chat_tokens = chat_tokens
+        self.oauth = oauth
+
+    def challenge(self, token_sent: bool) -> bytes:
+        """The WWW-Authenticate value. With OAuth on, it points clients at the metadata that starts a browser sign-in (RFC 9728)."""
+        value = 'Bearer realm="urumi-gateway"'
+        if self.oauth is not None:
+            value += f', resource_metadata="{self.oauth.config.metadata_url}", scope="{SCOPE}"'
+            if token_sent:
+                value += ', error="invalid_token"'
+        return value.encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -167,17 +178,22 @@ class ApiKeyAuth:
         who = None
         if key and ChatTokens.session_id(key) is not None:
             who = await authenticate_chat_token(self.db, self.chat_tokens, key, _header(scope, b"x-urumi-chat-id"))
+        elif key and key.startswith(ACCESS_PREFIX):
+            who = await self.oauth.identify(key) if self.oauth is not None else None
         elif key:
             who = await authenticate_api_key(self.db, key)
         if who is None:
-            message = "Missing API key" if not key else "Invalid or revoked API key"
+            if key and key.startswith(ACCESS_PREFIX):
+                message = "Invalid, expired or revoked access token"
+            else:
+                message = "Missing API key" if not key else "Invalid or revoked API key"
             body = json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": NOT_AUTHENTICATED, "message": message}}).encode()
             await send({
                 "type": "http.response.start",
                 "status": 401,
                 "headers": [
                     (b"content-type", b"application/json"),
-                    (b"www-authenticate", b'Bearer realm="urumi-gateway"'),
+                    (b"www-authenticate", self.challenge(token_sent=bool(key))),
                 ],
             })
             await send({"type": "http.response.body", "body": body})
@@ -188,6 +204,7 @@ class ApiKeyAuth:
         await self.app(scope, receive, send)
 
 
-def mcp_asgi_app(gateway: Gateway, db: Database, chat_tokens: ChatTokens) -> tuple[ASGIApp, StreamableHTTPSessionManager]:
+def mcp_asgi_app(gateway: Gateway, db: Database, chat_tokens: ChatTokens,
+                 oauth: GatewayOAuthProvider | None = None) -> tuple[ASGIApp, StreamableHTTPSessionManager]:
     manager = session_manager(build_server(gateway))
-    return ApiKeyAuth(StreamableHTTPASGIApp(manager), db, chat_tokens), manager
+    return ApiKeyAuth(StreamableHTTPASGIApp(manager), db, chat_tokens, oauth), manager

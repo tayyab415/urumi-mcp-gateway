@@ -24,6 +24,9 @@ class Settings:
     secret_key: str
     bootstrap_admin_email: str | None
     bootstrap_admin_password: str | None
+    # The address people and MCP clients use, with no trailing slash and no path. It is also the OAuth
+    # issuer, and `<public_url>/mcp` is the audience of every OAuth token. Browser sign-in for MCP clients
+    # needs https (or localhost); on any other http address it switches itself off.
     public_url: str
     cookie_secure: bool
     session_hours: int

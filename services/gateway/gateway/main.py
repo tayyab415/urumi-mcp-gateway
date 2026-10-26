@@ -1,6 +1,8 @@
 """Assembles the gateway process.
 
-    /mcp       the MCP endpoint for external clients (API key)
+    /mcp       the MCP endpoint for external clients (API key or OAuth token)
+    /authorize /token /register /revoke /oauth/consent /.well-known/oauth-*
+               OAuth sign-in for MCP clients (oauth.py), when PUBLIC_URL is https or localhost
     /api/...   the dashboard API (login session)
     /healthz   liveness: the process is serving
     /readyz    readiness: the process can reach its own database
@@ -29,7 +31,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text
 
-from gateway import api, stores
+from gateway import api, oauth, oauth_consent, stores
 from gateway.config import Settings
 from gateway.core import Gateway
 from gateway.db import Database, Server, User
@@ -101,7 +103,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db = Database(settings.database_url)
     gateway = Gateway(db, CredentialBox(settings.secret_key))
     chat_tokens = ChatTokens(settings.secret_key)
-    mcp_app, mcp_manager = mcp_asgi_app(gateway, db, chat_tokens)
+    oauth_provider = None
+    try:
+        oauth_provider = oauth.GatewayOAuthProvider(db, oauth.OAuthConfig.from_public_url(settings.public_url))
+    except ValueError as exc:
+        # Browser sign-in sends tokens, so it needs https (or localhost). API keys do not depend on it.
+        log.warning("OAuth sign-in is off (PUBLIC_URL=%s): %s", settings.public_url, exc)
+    mcp_app, mcp_manager = mcp_asgi_app(gateway, db, chat_tokens, oauth_provider)
     provisioner = (
         stores.Provisioner(settings.provisioner_url, settings.provisioner_token)
         if settings.provisioner_url and settings.provisioner_token else None
@@ -125,12 +133,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   openapi_url="/api/openapi.json", redoc_url=None)
     app.state.settings, app.state.db, app.state.gateway = settings, db, gateway
     app.state.chat_tokens = chat_tokens
+    app.state.oauth = oauth_provider
     app.state.provisioner = provisioner
 
     app.add_route("/mcp", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
     app.add_route("/mcp/", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
     api.install(app, settings)
     app.include_router(stores.build_router())
+    if oauth_provider is not None:
+        app.router.routes.extend([*oauth.auth_routes(oauth_provider), *oauth_consent.routes(oauth_provider, settings)])
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

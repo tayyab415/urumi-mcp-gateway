@@ -26,10 +26,10 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from gateway import upstreams
+from gateway import oauth, upstreams
 from gateway.config import Settings
 from gateway.core import ROLES, SEPARATOR, Gateway, Identity, definition_of, has_hidden_characters, pending_review, public_name
-from gateway.db import ApiKey, AuditEvent, Database, Invite, LoginSession, Server, Tool, User, utcnow
+from gateway.db import ApiKey, AuditEvent, Database, Invite, LoginSession, OAuthClient, OAuthGrant, Server, Tool, User, utcnow
 from gateway.security import CredentialBox, hash_password, new_api_key, new_token, sha256_hex, verify_password
 
 COOKIE = "urumi_session"
@@ -47,16 +47,31 @@ def iso(value: datetime | None) -> str | None:
 # --------------------------------------------------------------------- deps
 
 
+async def session_user(db: Database, token: str) -> User | None:
+    """The active user behind a dashboard session cookie, or None."""
+    async with db.session() as s:
+        session = await s.scalar(select(LoginSession).where(LoginSession.token_hash == sha256_hex(token)))
+        if session is None or session.expires_at < utcnow() or not session.user.active:
+            return None
+        return session.user
+
+
+async def check_password(db: Database, email: str, password: str) -> User | None:
+    """The user for this email and password, or None. One rule for the login form and the OAuth consent page."""
+    async with db.session() as s:
+        user = await s.scalar(select(User).where(User.email == email.strip().lower()))
+    # Same work either way, so the answer does not reveal which emails exist.
+    valid = verify_password(password, user.password_hash if user else DUMMY_PASSWORD_HASH)
+    return user if user is not None and valid and user.active else None
+
+
 async def current_user(request: Request) -> User:
     token = request.cookies.get(COOKIE)
     if not token:
         raise HTTPException(401, "Not logged in")
-    db: Database = request.app.state.db
-    async with db.session() as s:
-        session = await s.scalar(select(LoginSession).where(LoginSession.token_hash == sha256_hex(token)))
-        if session is None or session.expires_at < utcnow() or not session.user.active:
-            raise HTTPException(401, "Session expired")
-        user = session.user
+    user = await session_user(request.app.state.db, token)
+    if user is None:
+        raise HTTPException(401, "Session expired")
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-urumi-csrf") != "1":
         raise HTTPException(403, "Missing CSRF header")
     return user
@@ -288,11 +303,8 @@ def build_router(settings: Settings) -> APIRouter:
     @r.post("/auth/login")
     async def login(body: LoginIn, request: Request, response: Response) -> UserOut:
         db: Database = request.app.state.db
-        async with db.session() as s:
-            user = await s.scalar(select(User).where(User.email == body.email.strip().lower()))
-        # Same message and similar work either way, so the form does not reveal which emails exist.
-        valid = verify_password(body.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
-        if user is None or not valid or not user.active:
+        user = await check_password(db, body.email, body.password)
+        if user is None:
             raise HTTPException(401, "Wrong email or password")
         await start_session(db, user, response)
         return user_out(user)
@@ -320,8 +332,9 @@ def build_router(settings: Settings) -> APIRouter:
             return {"token": request.app.state.chat_tokens.issue(session.id, session.token_hash), "chat_url": "/api/chat"}
 
     @r.get("/auth/me")
-    async def me(user: CurrentUser) -> dict[str, Any]:
-        return {**user_out(user).model_dump(), "mcp_url": f"{settings.public_url}/mcp"}
+    async def me(user: CurrentUser, request: Request) -> dict[str, Any]:
+        return {**user_out(user).model_dump(), "mcp_url": f"{settings.public_url}/mcp",
+                "oauth_enabled": request.app.state.oauth is not None}
 
     # -- invitations ----------------------------------------------------------
 
@@ -458,6 +471,37 @@ def build_router(settings: Settings) -> APIRouter:
             if key.revoked_at is None:
                 key.revoked_at, key.revoked_by = utcnow(), user.id
                 await s.commit()
+        return {"ok": True}
+
+    # -- connected apps (OAuth grants) ------------------------------------------
+
+    @r.get("/oauth/grants")
+    async def list_grants(user: CurrentUser, request: Request, all: bool = False) -> list[dict[str, Any]]:
+        """Apps this person signed in to by browser. Admins may list everyone's with ?all=true."""
+        if all and user.role != "admin":
+            raise HTTPException(403, "Admins only")
+        q = (select(OAuthGrant, OAuthClient, User)
+             .join(OAuthClient, OAuthClient.client_id == OAuthGrant.client_id)
+             .join(User, User.id == OAuthGrant.user_id)
+             .where(OAuthGrant.revoked_at.is_(None)).order_by(OAuthGrant.authorized_at.desc()))
+        if not all:
+            q = q.where(OAuthGrant.user_id == user.id)
+        async with request.app.state.db.session() as s:
+            return [
+                {"id": g.id, "client_id": c.client_id, "client_name": c.name, "user_email": u.email,
+                 "created_at": iso(g.authorized_at), "last_used_at": iso(g.last_used_at)}
+                for g, c, u in (await s.execute(q)).all()
+            ]
+
+    @r.delete("/oauth/grants/{grant_id}")
+    async def disconnect_app(grant_id: int, user: CurrentUser, request: Request) -> dict[str, bool]:
+        """Disconnect an app: its access and refresh tokens stop working on their next use."""
+        async with request.app.state.db.session() as s:
+            grant = await s.get(OAuthGrant, grant_id)
+            if grant is None or grant.revoked_at is not None or (grant.user_id != user.id and user.role != "admin"):
+                raise HTTPException(404, "No such connected app")
+            await oauth.revoke_grant(s, grant.id)
+            await s.commit()
         return {"ok": True}
 
     # -- servers --------------------------------------------------------------

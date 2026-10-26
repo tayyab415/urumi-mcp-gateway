@@ -47,7 +47,7 @@ named by an env var (`credential_env`) that comes from the Secret.
 
 | Reachable from | Gateway | Chat | Dashboard | woo-mcp, shipping, supplier | WordPress REST |
 |---|---|---|---|---|---|
-| The internet, through Traefik | `/api`, `/mcp` | `/api/chat` | `/` | no route | storefront only |
+| The internet, through Traefik | `/api`, `/mcp`, OAuth paths | `/api/chat` | `/` | no route | storefront only |
 | Inside the cluster | from chat | — | — | from the gateway only | from woo-mcp |
 
 Ingress gives the outside world a path to three Services and nothing else. The
@@ -95,16 +95,21 @@ gateway, chat or dashboard (WordPress, for the shop hostname)
   `urumi-app-tls` Secret. It renews it a month before the 90-day expiry.
 - **HTTPS only.** Plain HTTP gets a 301 redirect to HTTPS. The login cookie is
   `Secure` (sent only over HTTPS) and `HttpOnly` (page scripts cannot read it).
-- **Four Ingresses, one hostname.** Traefik attaches middlewares per Ingress,
-  so login, `/mcp` and chat each have their own Ingress and their own limit.
-  Only the main one carries the cert-manager annotation; all four use its
-  certificate.
+- **Five Ingresses, one hostname.** Traefik attaches middlewares per Ingress,
+  so login, OAuth sign-in, `/mcp` and chat each have their own Ingress and
+  their own limit. Only the main one carries the cert-manager annotation; all
+  five use its certificate.
+- **OAuth paths go to the gateway.** `/.well-known/oauth-authorization-server`
+  and `/.well-known/oauth-protected-resource` are on the main Ingress.
+  `/authorize`, `/token`, `/register`, `/revoke` and `/oauth` have their own
+  Ingress and use the login limit. Without these routes `/` would answer them
+  with the dashboard's HTML and an MCP client could not find the sign-in.
 - **Rate limits.** Traefik counts requests before they reach a Pod and answers
   429 past the limit (`ingress.traefik.rateLimits`):
 
 | Path | Limit | Counted per |
 |---|---|---|
-| `/api/auth/login` | 10 at once, then 20 a minute | client address |
+| `/api/auth/login`, `/authorize`, `/token`, `/register`, `/revoke`, `/oauth` | 10 at once, then 20 a minute | client address (one shared count) |
 | `/mcp` | 50 at once, then 10 a second | `Authorization` header: each API key |
 | `/api/chat` | 20 at once, then 30 a minute | `Authorization` header: each chat session |
 
