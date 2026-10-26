@@ -46,6 +46,39 @@ audit log. A malicious admin is out of scope.
 Each arrow is a place where a credential is checked, or a NetworkPolicy decides
 who may connect.
 
+## The brief's four questions, answered
+
+**Shared upstream credentials: what can a member do with a credential they
+never see?** Exactly what the gateway lets them call with it, and nothing
+else. The WooCommerce REST key, the shipping and supplier tokens and the Slack
+bot token are encrypted in the gateway's database (key in a Kubernetes
+Secret) and are only ever put on the gateway's own outgoing request. No API
+response, page or tool result contains them. So a member is limited to the
+tools their role allows (members cannot create products or change order
+status, or post to Slack, unless an admin opens those tools), each call is
+audited under their name, and revoking their key ends it. What is left: the
+upstream sees one shared identity, so its own logs cannot tell members apart;
+the gateway's audit log and, for Slack, the "Name (via urumi)" label are what
+attribute actions.
+
+**Why are client tokens not passed through to upstreams?** Three reasons. A
+member's key or OAuth token is meant for the gateway alone; forwarding it
+would let any upstream replay it against the gateway or anything else that
+accepts it (the "confused deputy" the MCP security guidance warns about). The
+upstreams don't know our users, so a forwarded token would mean nothing to
+them. And the gateway's checks (role, disabled server, pinning, audit) would
+be pointless if the upstream decided access instead. So inbound tokens stop at
+the gateway; each upstream gets only its own credential. OAuth tokens are also
+bound to `<PUBLIC_URL>/mcp`, so a token issued here is refused anywhere else.
+
+**Untrusted upstreams: tool descriptions written to manipulate the model.**
+See "A malicious upstream" below: the approval gate, role checks, tool
+pinning (a changed description is held until an admin approves it),
+hidden-character stripping, size caps and server labels.
+
+**What can one team member do to another?** See "What one team member can do
+to another" below.
+
 ## Threats, and what stops them
 
 | # | Threat | What stops it | What is left |
