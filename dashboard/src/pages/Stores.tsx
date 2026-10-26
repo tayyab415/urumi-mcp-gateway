@@ -95,7 +95,9 @@ export function StoresPage() {
                 {s.ready_at && s.created_at && <> · ready in {Math.max(1, Math.round((Date.parse(s.ready_at) - Date.parse(s.created_at)) / 60000))} min</>}
               </span>
               <span>
-                {s.registered ? <>Tools <code>{s.server_slug}__*</code> · {s.server_status ?? "registered"}</> : s.phase === "Ready" ? "Registering its MCP server" : "Tools appear when it is ready"}
+                {!s.mine && me?.role !== "admin" ? "Its tools are visible to its owner and admins"
+                  : s.registered ? <>Tools <code>{s.server_slug}__*</code> · {s.server_status ?? "registered"}</>
+                  : s.phase === "Ready" ? "Registering its MCP server" : "Tools appear when it is ready"}
               </span>
             </div>
             <div className={styles.bar}>

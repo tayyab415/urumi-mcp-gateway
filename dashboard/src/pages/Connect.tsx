@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { KeyRound, Plus } from "lucide-react";
+import { KeyRound, Plug, Plus } from "lucide-react";
 import { ConfirmMorph } from "@/arc/confirm-morph";
 import { CopyButton } from "@/arc/copy-button";
 import { useAuth } from "@/state/auth";
@@ -30,12 +30,14 @@ export function ConnectPage() {
   const toast = useToast();
   const keys = useResource(() => api.keys.list(), [], { interval: 15000 });
   const tools = useResource(() => api.tools.mine(), [], { interval: 15000 });
+  const apps = useResource(() => api.oauth.grants(), [], { interval: 15000 });
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [fresh, setFresh] = useState<NewKey | null>(null);
   const [client, setClient] = useState<Client>("claude");
   const url = me?.mcp_url ?? "";
   const keyValue = fresh?.key ?? "<your key>";
+  const oauthOn = me?.oauth_enabled !== false;
 
   const snippet = useMemo(() => {
     switch (client) {
@@ -118,6 +120,32 @@ export function ConnectPage() {
               ))}
             </div>
           </Card>
+
+          {oauthOn && (
+            <Card padded>
+              <div className={styles.h}>Sign in with your browser (OAuth)</div>
+              <div style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", marginBottom: 10 }}>
+                No key to copy. Add the server with no header. Claude Code: run <code>/mcp</code>, pick urumi, then Authenticate. Cursor: add the URL
+                with no headers, then press Connect. Your browser opens, you sign in, and you press Allow.
+              </div>
+              <CodeBlock code={`claude mcp add --transport http urumi ${url}`} />
+              <div style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", marginTop: 8 }}>
+                Use this or an API key, not both. Claude Code never tries OAuth when a static Authorization header is set.
+              </div>
+              <div className={styles.h} style={{ marginTop: 16 }}>Connected apps</div>
+              {apps.loading ? <SkeletonRows rows={1} /> : apps.data?.length === 0 ? <EmptyState inline>No apps connected</EmptyState> : apps.data?.map((a) => (
+                <div key={a.id} className={styles.keyRow}>
+                  <Plug size={16} strokeWidth={1.75} style={{ color: "var(--text-muted)", flex: "none" }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className={styles.keyName}>{a.client_name}</div>
+                    <div className={styles.keyMeta}>connected {relTime(a.created_at)} · {a.last_used_at ? `used ${relTime(a.last_used_at)}` : "not used yet"}</div>
+                  </div>
+                  <ConfirmMorph label="Disconnect" prompt="Disconnect this app?" confirmLabel="Confirm disconnect" pendingLabel="Disconnecting" doneLabel="Disconnected" resultTimeout={2500}
+                    onConfirm={async () => { await api.oauth.disconnect(a.id); await apps.reload(); }} />
+                </div>
+              ))}
+            </Card>
+          )}
 
           <Card padded>
             <div className={styles.h}>Add it to your client</div>

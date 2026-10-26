@@ -65,6 +65,30 @@ who may connect.
 | 13 | A compromised container | The Pod Security Standard is "restricted": non-root, no privilege escalation, no Linux capabilities, read-only root filesystem. Each Pod has only its own Secret keys and only the network paths it needs. | A compromised gateway holds the encryption key and every upstream credential. It is the most valuable target. |
 | 14 | Brute force against WordPress admin | The WordPress admin password is 32 random bytes from the Secret. | The store has no rate limit on `wp-login.php`, and `xmlrpc.php` is on. Both are open to the internet. |
 
+## Browser sign-in for MCP clients (OAuth)
+
+The gateway issues its own tokens to Claude Code, Cursor and similar apps after
+a person presses Allow. How it works: [design.md, section 13](design.md). This
+section describes the code in the repository, tested locally. It is not on the
+VM yet.
+
+| # | Threat | What stops it | What is left |
+|---|---|---|---|
+| 15 | A stolen OAuth token | An access token lasts an hour. The gateway checks it on every request, so disconnecting the app on the Connect page, or deactivating the person, ends it at once. A refresh token is replaced each time it is used. If an old one comes back, the grant ends. The database holds only hashes. | A thief with a fresh access token can act as that person until it expires or someone disconnects the app. A thief who uses a refresh token before the real client does stays hidden until the client's next refresh fails. |
+| 16 | Consent phishing: a hostile app, named "Claude Code", asks a person to press Allow | The page says the app chose its own name, names the person and their role, and shows where the browser goes next. The redirect must be a URI the app registered, and registration accepts only https, loopback and `cursor:`. The app gets only what the person's role allows. Its calls show in the audit log as `oauth:<name>`. The grant is listed on the Connect page, and an admin can list and remove everyone's. | A person who presses Allow for an app they did not start hands over their role until it is disconnected, 90 days at most. Nothing stops a lookalike name. |
+| 17 | A token for another server, or a token passed on to an upstream (confused deputy) | Every token is for `<PUBLIC_URL>/mcp`. `/authorize` and `/token` refuse any other `resource`, and `/mcp` refuses a stored token with another audience. The gateway never forwards an inbound token. Upstream calls carry only that upstream's own credential. | None found. |
+| 18 | Someone floods `/register` or `/authorize`, which need no login | At most 200 unapproved clients and 1000 waiting requests are kept, the oldest unapproved clients go first, and the Ingress rate limit sits in front. | An attacker can churn the unapproved list and push out a client that registered a minute ago. That client registers again. |
+| 19 | A forged "Allow" posted from another site, or a script injected through an app's name | The form needs a random token that sits in the form and in a cookie. Another site can read neither. Every value on the page is HTML-escaped, and the Content-Security-Policy allows no scripts and no framing. | None found. |
+| 20 | Guessing a password on the consent page | The same check as the login form, and the same Ingress limit. | Both share one limit, so a stranger can slow down everyone's sign-in (threat 1). |
+
+**Why tokens are opaque and stored as hashes.** A signed token (a JWT) would let
+`/mcp` skip the database, but it could not be taken back before it expired. The
+gateway already does one lookup per request for API keys, so an opaque token
+costs nothing extra and can be revoked on the next call. An opaque token also
+tells a thief nothing if they read it. The database stores SHA-256 hashes, as it
+does for API keys, so a stolen copy of the database holds nothing a client can
+present. A fast hash is enough because each token is 256 random bits.
+
 ## A malicious upstream, and text that reaches the model
 
 The model reads tool descriptions and tool results, and either can contain
@@ -136,3 +160,5 @@ gateway audit row.
 4. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
 5. Use a load balancer that keeps client addresses, so the login limit is per
    client.
+6. Try browser sign-in with a real Claude Code and a real Cursor, then decide
+   whether a short grace period for refresh tokens is worth its cost.

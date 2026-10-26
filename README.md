@@ -17,7 +17,7 @@ Everything runs on Kubernetes and installs with two Helm charts.
 | What | Where |
 |---|---|
 | Dashboard and chat | https://app.34-67-189-86.sslip.io |
-| MCP endpoint | `https://app.34-67-189-86.sslip.io/mcp`, header `Authorization: Bearer <API key>` |
+| MCP endpoint | `https://app.34-67-189-86.sslip.io/mcp`, header `Authorization: Bearer <API key>`, or a browser sign-in (OAuth) |
 | The store | https://shop.34-67-189-86.sslip.io (checkout uses cash on delivery) |
 
 **Accounts.**
@@ -35,6 +35,17 @@ exact command or config. For Claude Code:
 claude mcp add --transport http urumi https://app.34-67-189-86.sslip.io/mcp \
   --header "Authorization: Bearer urumi_..."
 ```
+
+Or skip the key and sign in with the browser. Add the server without a header,
+then run `/mcp` in Claude Code and pick Authenticate:
+
+```bash
+claude mcp add --transport http urumi https://app.34-67-189-86.sslip.io/mcp
+```
+
+Use one or the other. Claude Code never tries OAuth when a static
+`Authorization` header is set. You can disconnect a browser sign-in on the
+Connect page.
 
 ## How it fits together
 

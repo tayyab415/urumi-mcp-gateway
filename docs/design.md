@@ -7,7 +7,7 @@ over. The threat model is separate: [threat-model.md](threat-model.md).
 
 ```text
  Claude Code / Cursor            Browser
-   (API key)                 (login cookie)
+ (API key or OAuth token)    (login cookie)
        │                          │
        │      Traefik Ingress, HTTPS, rate limits
        │          │               │
@@ -32,9 +32,9 @@ servers, without handing every person every upstream credential, and with one
 record of who did what.
 
 **How.** The gateway is an MCP *server* to its clients and an MCP *client* to
-each upstream. External clients come in on `/mcp` with an API key. The
-dashboard chat comes in on the same `/mcp`, with a chat token tied to the
-user's login session. Both end in `Gateway.call_tool` in
+each upstream. External clients come in on `/mcp` with an API key, or with an
+OAuth token after a browser sign-in (section 13). The dashboard chat comes in
+on the same `/mcp`, with a chat token tied to the user's login session. Both end in `Gateway.call_tool` in
 `services/gateway/gateway/core.py`, so the tool list, the role check, the
 timeouts and the audit row are the same code for both. The chat service has no
 tool code of its own; it is just another MCP client.
@@ -96,6 +96,7 @@ mid-session keeps working until the client reconnects.
 |---|---|---|---|
 | A person's password | nobody | scrypt hash, salted | gateway database |
 | A person's API key, a login session | nobody (we only compare) | SHA-256 hash; the key is shown once | gateway database |
+| An OAuth access token, refresh token or authorization code | nobody (we only compare) | SHA-256 hash; shown once, in the response that issues it | gateway database |
 | An upstream's credential (shipping token, supplier key, Slack server token) | the gateway, to send it | encrypted (Fernet) with `gateway-secret-key` | encrypted in the database, key in a Kubernetes Secret |
 | WooCommerce REST key | `woo-mcp`, to sign requests | plain, in the Secret | Kubernetes Secret, mounted only into `woo-mcp` |
 | Bedrock API key | the chat service | plain, in the Secret | Kubernetes Secret, mounted only into chat |
@@ -269,6 +270,110 @@ seconds. Revision 5's gateway image was back, and `/mcp`'s 401 code was `-32001`
 again. The data didn't change: 5 users, 6 keys, 4 servers, 37 audit rows. That
 includes a row written by revision 6's code a minute before. Rolling forward
 again took 34 seconds, and the data stayed the same.
+
+## 13. OAuth sign-in for MCP clients
+
+**Problem.** Claude Code and Cursor can open a browser and sign a person in,
+but only if the MCP server speaks OAuth. With an API key, each person makes a
+key on the Connect page, pastes it into a command and keeps it safe. The key
+never expires. OAuth gives them a login page instead, and a token that lasts an
+hour.
+
+**How.** The gateway is its own authorization server, following the MCP
+authorization spec. The MCP SDK supplies the HTTP endpoints and checks PKCE and
+redirect URIs. We supply storage and the rules around tokens.
+
+1. A client calls `/mcp` with no credential. The 401 carries
+   `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_URL>/.well-known/oauth-protected-resource/mcp"`.
+2. The client reads that document and `/.well-known/oauth-authorization-server`.
+   It registers itself at `/register` (RFC 7591) and sends the browser to
+   `/authorize` with a PKCE challenge and `resource=<PUBLIC_URL>/mcp` (RFC 8707).
+3. The gateway saves the request and redirects to `/oauth/consent`. The page
+   names the app, the person and their role. A browser with a dashboard session
+   only needs Allow. Otherwise the person types email and password first, checked
+   by the same function as `POST /api/auth/login`. Allow redirects to the app with
+   a code that works once, for five minutes. Deny redirects with
+   `error=access_denied`.
+4. The app trades the code at `/token` for an access token (`urumioat_...`, one
+   hour) and a refresh token (`urumiort_...`, 30 days, replaced at each use, and
+   never more than 90 days after the approval).
+
+**Where it lives.** `gateway/oauth.py` has the provider (clients, codes, tokens) and
+the route assembly. `gateway/oauth_consent.py` has the page. `ApiKeyAuth` in
+`mcp_endpoint.py` accepts the token next to API keys and chat tokens.
+`GET /api/oauth/grants` and `DELETE /api/oauth/grants/{id}` back the Connected
+apps list on the Connect page. Five tables hold it all: clients, grants (one per
+person and app), pending requests, codes and tokens. The Ingress sends the OAuth
+paths to the gateway, and the sign-in paths share the login rate limit.
+
+The rules that matter:
+
+- **Same checks as a key.** `ApiKeyAuth` looks the token up on every request. It
+  must exist, be unexpired and unrevoked, belong to a grant that was not
+  disconnected, and belong to an active user. The Identity has `via = mcp` and a
+  key column of `oauth:<app name>`, so the audit log shows which app acted. Tool
+  lists, role checks and audit rows are the code API keys use.
+- **One audience.** Every token is for `<PUBLIC_URL>/mcp`. `/authorize` and
+  `/token` refuse a `resource` that names anything else, and `/mcp` refuses a
+  stored token with another audience. The gateway never forwards an inbound token
+  to an upstream. It sends only the upstream's own stored credential.
+- **Opaque tokens, stored as hashes.** Random 256-bit strings, SHA-256 in the
+  database, the same as API keys. See the threat model for why not JWTs.
+- **Public clients only.** Registration returns no client secret, whatever the
+  client asks for. PKCE with S256 is the proof, and plain is refused.
+- **Single use.** A code that comes back a second time ends the grant it created.
+  So does a refresh token that was already replaced.
+- **Redirects.** A registered redirect URI must be `https:`, loopback `http:`
+  (`localhost`, `127.0.0.1`, `[::1]`) or `cursor:`. A loopback URI may change
+  its port between sign-ins (RFC 8252 section 7.3), because native apps pick a
+  free port each time. The browser goes to the registered URI, never one from
+  the request.
+- **Open registration is capped.** `/register` needs no login. The gateway keeps
+  at most 200 clients that nobody approved, drops the oldest first, and deletes
+  any after 24 hours. It refuses more than five redirect URIs and metadata over
+  8 KB. The Ingress rate limit sits in front.
+- **Issuer.** `PUBLIC_URL` without a trailing slash, in the metadata and in the
+  `iss` of every redirect, so a client's plain string comparison passes (RFC 9207).
+
+**When it fails.**
+
+- OAuth is off when `PUBLIC_URL` is plain `http` and not localhost. The SDK
+  refuses such an issuer, and tokens over clear text are unsafe anyway. The
+  gateway logs a warning and carries on with API keys. The local k3d cluster
+  (`http://app.urumi.test`) therefore has no browser sign-in. The VM is on
+  https, so it will have one once this is deployed.
+- An access token expires in an hour. The client refreshes without a browser. If
+  the refresh token is lost or too old, the browser opens again.
+- Two copies of one client that refresh at the same moment will present the same
+  refresh token twice. The second counts as a copy and ends the grant, so one
+  person signs in again. A grace period would avoid that, and would also let a
+  thief's copy through during the grace. I kept the strict rule.
+- A page on another site that starts the flow arrives without the dashboard
+  cookie (it is `SameSite=Strict`). The consent page then asks for the password.
+- Cursor's docs list an https callback and `http://localhost:8787/callback`, and
+  both pass the redirect rules. They do not mention a custom scheme. I allowed
+  `cursor:` in case the desktop app uses one, and have not tried a real Cursor.
+- Claude Code never tries OAuth when a static `Authorization` header is set. A
+  person uses a key or a browser sign-in, not both. The Connect page says so.
+- A person is deactivated, or an admin disconnects the app: the next `/mcp`
+  request is a 401 with `error="invalid_token"`, and the refresh token fails.
+
+**Checked.** `tests/test_oauth.py` runs the gateway under uvicorn and uses the
+SDK's own OAuth client. It covers discovery, registration, PKCE, the consent
+page (dashboard cookie and password), tool calls and the audit prefix, refresh,
+disconnecting, and the 401 header. Other tests cover Deny, a wrong verifier, a
+reused code, a reused refresh token, a token for another resource, a
+deactivated user, CSRF, HTML escaping, redirect URI rules, loopback ports and
+the registration cap. I also broke eight of these rules one at a time (audience
+at `/mcp`, audience at `/token`, code reuse, refresh reuse, the CSRF cookie,
+escaping, the active-user check, loopback ports). Each time a test failed. Not checked: a real Claude Code
+or Cursor login, and MariaDB.
+
+**Simpler option.** Keep API keys only. That works, and it is what the first
+version did. The other route is to hand login to an outside provider such as
+Google and accept only its tokens. That removes the consent page and token
+tables, but every teammate needs an account there, and the gateway still has to
+map each identity to a user and a role.
 
 ## What I would change for a bigger team
 
