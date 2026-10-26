@@ -58,11 +58,12 @@ export function App() {
                 <Route path="/connect" element={<ConnectPage />} />
                 <Route path="/audit" element={<AuditPage />} />
                 <Route path="/lab" element={<LabPage />} />
+                {/* Any signed-in person may create stores; the gateway checks owner and limits. */}
+                <Route path="/stores" element={<StoresPage />} />
                 <Route element={<AdminOnly />}>
                   <Route path="/servers" element={<ServersPage />} />
                   <Route path="/team" element={<TeamPage />} />
                   <Route path="/permissions" element={<PermissionsPage />} />
-                  <Route path="/stores" element={<StoresPage />} />
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

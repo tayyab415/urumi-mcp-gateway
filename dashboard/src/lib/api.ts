@@ -96,6 +96,19 @@ export interface ServerTool {
   allowed_roles: Role[];
   present: boolean;
   input_schema: Record<string, unknown> | null;
+  /** Tool pinning: hidden and refused until an admin approves the current definition. */
+  pending_review: boolean;
+  hidden_characters: boolean;
+  approved_definition: ToolDefinition | null;
+  definition: ToolDefinition;
+}
+
+export interface ToolDefinition {
+  title: string | null;
+  description: string;
+  input_schema: Record<string, unknown> | null;
+  output_schema: Record<string, unknown> | null;
+  annotations: Record<string, unknown> | null;
 }
 
 export interface MyTool {
@@ -233,6 +246,7 @@ export const api = {
     remove: (id: number) => http.del<{ ok: boolean }>(`/api/servers/${id}`),
     refresh: (id: number) => http.post<Server>(`/api/servers/${id}/refresh`),
     tools: (id: number) => http.get<ServerTool[]>(`/api/servers/${id}/tools`),
+    approveTool: (id: number, tool: string) => http.post<ServerTool>(`/api/servers/${id}/tools/${encodeURIComponent(tool)}/approve`),
     setToolRoles: (id: number, tool: string, allowed_roles: Role[]) => http.patch<ServerTool>(`/api/servers/${id}/tools/${encodeURIComponent(tool)}`, { allowed_roles }),
     test: (draft: Partial<ServerDraft> & { server_id?: number | null }) => http.post<TestResult>("/api/servers/test", draft),
   },

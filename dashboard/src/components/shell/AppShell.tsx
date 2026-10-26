@@ -25,6 +25,7 @@ const ADMIN_NAV: NavItem[] = [
 ];
 const MEMBER_NAV: NavItem[] = [
   { to: "/chat", label: "Chat", icon: MessageSquare },
+  { to: "/stores", label: "Stores", icon: Store },
   { to: "/connect", label: "Connect", icon: KeyRound },
   { to: "/audit", label: "Audit log", icon: FileText },
 ];

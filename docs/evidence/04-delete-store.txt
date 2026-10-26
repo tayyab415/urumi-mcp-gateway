@@ -1,0 +1,40 @@
+### Before: Ana's store tools
+[ana@urumi.test] 3 tools: store-east__get_order, store-east__list_orders, store-east__list_products
+### Before: resources in store-east
+  pod/east-mariadb-0
+  pod/east-store-setup-gddwb
+  pod/east-woo-mcp-c5d98cfb9-p2kvs
+  pod/east-wordpress-69865f8db4-xw6bg
+  service/east-mariadb
+  service/east-woo-mcp
+  service/east-wordpress
+  deployment.apps/east-woo-mcp
+  deployment.apps/east-wordpress
+  replicaset.apps/east-woo-mcp-c5d98cfb9
+  replicaset.apps/east-wordpress-69865f8db4
+  statefulset.apps/east-mariadb
+  job.batch/east-store-setup
+  persistentvolumeclaim/east-mariadb
+  persistentvolumeclaim/east-wordpress
+  secret/sh.helm.release.v1.east.v1
+  secret/store-credentials
+  ingress.networking.k8s.io/east-store
+  networkpolicy.networking.k8s.io/east-default-deny
+  networkpolicy.networking.k8s.io/east-mariadb-in
+  networkpolicy.networking.k8s.io/east-woo-mcp
+  networkpolicy.networking.k8s.io/east-wordpress-in
+  networkpolicy.networking.k8s.io/east-wordpress-out
+  resourcequota/east-quota
+### Delete (as Ana, through the gateway)
+HTTP 200: east       Deleting     http://east.34-67-189-86.sslip.io        owner=ana@urumi.test  Deleting
+### Right after: Ana's store-east tools
+[ana@urumi.test] 0 tools: 
+### Direct call to a cached tool name
+[ana@urumi.test] store-east__list_orders -> ERROR: Unknown tool 'store-east__list_orders'.
+### After teardown (checked 8s later)
+namespace store-east: Error from server (NotFound): namespaces "store-east" not found
+PersistentVolumes still bound to store-east: 0
+gateway servers named store-east: 0
+stores now:
+  north      Ready        http://north.34-67-189-86.sslip.io       owner=ana@urumi.test tools=store-north__* (ok)
+  south      Ready        http://south.34-67-189-86.sslip.io       owner=bob@urumi.test tools=store-south__* (ok)

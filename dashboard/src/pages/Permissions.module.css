@@ -11,3 +11,11 @@
 .barInner { pointer-events: auto; display: flex; align-items: center; gap: 16px; padding: 6px 6px 6px 18px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); box-shadow: var(--shadow-pill); }
 .group { border-top: 1px solid var(--border); }
 .group:first-of-type { border-top: 0; }
+.held { margin-bottom: 16px; padding: 4px 0; border-color: color-mix(in oklab, var(--warning, #c98a00) 50%, var(--border)); }
+.heldHead { display: grid; gap: 4px; padding: 12px 16px; font-size: var(--text-sm); }
+.heldHead span { color: var(--text-muted); font-size: var(--text-xs); }
+.heldRow { display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.why { font-family: var(--font-body); font-size: 11px; margin-left: 8px; color: var(--warning, #c98a00); }
+.diff { display: grid; gap: 4px; font-size: var(--text-xs); }
+.diff > div { display: grid; grid-template-columns: 72px 1fr; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--surface-muted); white-space: pre-wrap; word-break: break-word; }
+.diff span { color: var(--text-muted); }

@@ -72,10 +72,50 @@ export function PermissionsPage() {
     }
   }
 
+  const held = servers.flatMap((s) => (tools[s.id] ?? []).filter((t) => t.present && t.pending_review).map((t) => ({ s, t })));
+
+  async function approve(s: Server, t: ServerTool) {
+    try {
+      await api.servers.approveTool(s.id, t.name);
+      toast(`${t.public_name} approved. It is listed and callable again.`, "success");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not approve", "danger");
+    }
+  }
+
   return (
     <>
       <PageHeader title="Permissions" subtitle="A tool a role cannot use is hidden from its tool list and rejected if called directly." />
       {error && <Alert tone="danger" actions={<Button size="sm" onClick={() => void load()}>Retry</Button>}>{error}</Alert>}
+      {held.length > 0 && (
+        <Card className={styles.held}>
+          <div className={styles.heldHead}>
+            <strong>{held.length} {held.length === 1 ? "tool is" : "tools are"} held for review</strong>
+            <span>An upstream changed what a tool says it does, or added a tool, after it was reviewed. Until you approve it, nobody sees it and calls to it are refused.</span>
+          </div>
+          {held.map(({ s, t }) => {
+            const before = t.approved_definition;
+            const schemaChanged = before && JSON.stringify(before.input_schema) !== JSON.stringify(t.definition.input_schema);
+            return (
+              <div key={`${s.id}/${t.name}`} className={styles.heldRow}>
+                <div className={styles.name}>{t.public_name}
+                  <span className={styles.why}>{t.hidden_characters ? "hidden characters in the text" : before ? "definition changed" : "new tool"}</span>
+                </div>
+                {before && before.description !== t.definition.description && (
+                  <div className={styles.diff}>
+                    <div><span>Approved</span>{before.description || "(empty)"}</div>
+                    <div><span>Now</span>{t.definition.description || "(empty)"}</div>
+                  </div>
+                )}
+                {!before && <div className={styles.diff}><div><span>Says</span>{t.definition.description || "(empty)"}</div></div>}
+                {schemaChanged && <div className={styles.why}>Its input schema changed too.</div>}
+                <div><Button size="sm" variant="primary" onClick={() => void approve(s, t)}>Approve this definition</Button></div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
       <Card>
         <div className={styles.head}><span>Tool</span><span>Admin</span><span>Member</span></div>
         {loading ? <div style={{ padding: 16 }}><SkeletonRows rows={8} height={40} /></div> : servers.length === 0 ? <EmptyState>No servers yet</EmptyState> : servers.map((s) => (
@@ -90,7 +130,7 @@ export function PermissionsPage() {
               return (
                 <div key={t.name} className={styles.row}>
                   <div style={{ minWidth: 0 }}>
-                    <div className={styles.name}>{t.public_name}{!readOnly && <span style={{ fontFamily: "var(--font-body)", color: "var(--text-muted)", fontSize: 11, marginLeft: 8 }}>changes data</span>}</div>
+                    <div className={styles.name}>{t.public_name}{!readOnly && <span style={{ fontFamily: "var(--font-body)", color: "var(--text-muted)", fontSize: 11, marginLeft: 8 }}>changes data</span>}{t.pending_review && <span className={styles.why}>held for review</span>}</div>
                     <div className={styles.desc}>{t.title ?? t.description}</div>
                   </div>
                   <div className={styles.cell}><Switch label={`Admin may use ${t.public_name}`} checked={roles.includes("admin")} onChange={(on) => toggle(s, t, "admin", on)} /></div>
