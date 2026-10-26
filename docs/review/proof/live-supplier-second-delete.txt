@@ -1,0 +1,2 @@
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "urumi-supplier-79f8b474c-bdzmp" force deleted from urumi-app namespace

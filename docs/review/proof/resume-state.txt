@@ -1,0 +1,7 @@
+UTC 2026-10-26T11:04:19Z
+command: review_session /run resume_state.py
+Review-owned key records [{"who": "admin", "id": 12}, {"who": "ana", "id": 13}, {"who": "bob", "id": 14}, {"who": "chen", "id": 15}, {"who": "bob", "id": 16}, {"who": "bob", "id": 17}, {"who": "bob", "id": 18}, {"who": "bob", "id": 19}, {"who": "bob", "id": 20}, {"who": "bob", "id": 21}, {"who": "bob", "id": 22}]
+Stored state names ["admin_audit_before", "admin_password", "admin_servers", "admin_tools", "ana_password", "ana_tools", "bob_audit_before", "bob_password", "bob_servers", "bob_tools", "chen_password", "chen_tools", "oauth_access", "oauth_clients", "oauth_refresh", "review_store"]
+Stores [{"slug": "north", "phase": "Ready", "owner": "ana@urumi.test"}, {"slug": "south", "phase": "Ready", "owner": "bob@urumi.test"}, {"slug": "west-sports", "phase": "Ready", "owner": "bob@urumi.test"}, {"slug": "review-astra", "phase": "Ready", "owner": "chen@urumi.test"}]
+Servers [{"id": 2, "slug": "shipping", "enabled": true, "status": "ok"}, {"id": 4, "slug": "slack", "enabled": true, "status": "ok"}, {"id": 7, "slug": "store-north", "enabled": true, "status": "ok"}, {"id": 9, "slug": "store-review-astra", "enabled": true, "status": "ok"}, {"id": 5, "slug": "store-south", "enabled": true, "status": "ok"}, {"id": 8, "slug": "store-west-sports", "enabled": true, "status": "ok"}, {"id": 3, "slug": "supplier", "enabled": true, "status": "ok"}, {"id": 1, "slug": "woo", "enabled": true, "status": "ok"}]
+Connected app grants []

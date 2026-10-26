@@ -1,0 +1,26 @@
+UTC 2026-10-26. Commands: T3 preview_click and preview_evaluate.
+Signed in as admin@urumi.test at the direct VM address, then at run.app.
+
+Overview: tool-call totals, latency and errors per server loaded. During the
+supplier outage it displayed Unreachable with ConnectError while shipping was
+connected. Screenshot supplier-down-overview.png.
+Servers: eight enabled servers, connected states and discovered tools loaded.
+Shipping disable/re-enable was separately exercised via the REST API.
+Permissions: all built-in and store tools loaded with read versus change labels,
+per-role controls and no alert. No permission was changed by the review.
+Team: Admin, Ana, Bob, Chen, Dev; roles and active-key counts loaded, no alert.
+Connect at run.app: correct MCP/search URL, OAuth instructions, keys and 33 tools
+from eight servers loaded. Raw credentials were excluded from captured text.
+Audit: the calls table and user/server/outcome/via filters loaded. Selecting the
+MCP filter misses mcp-search rows; reproduced independently in
+search-audit-confirmed.txt.
+Stores: ready stores and owner metadata loaded. Cloud Run's first-store URL was
+wrong; separately reproduced in cloud-run-browser.txt.
+Chat: approved product creation, read-back of the resulting order, prompt
+injection handling, disabled-server handling and partial failure were tested.
+
+Bob's member page/route checks are in bob-pages.txt.
+Chen's Cloud Run member chat/store-delete checks are in cloud-run-browser.txt.
+No unexplained page error or silent action failure was observed in this pass.
+Deliberately unimplemented GET /api/config and /api/permissions are not page
+endpoints and are not findings.

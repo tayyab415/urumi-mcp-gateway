@@ -1,0 +1,18 @@
+== Endpoints
+GET  /mcp            -> 405   (405: POST only)
+POST /mcp, no key    -> 401   (401)
+401 points to OAuth  -> resource_metadata="https://app.34-67-189-86.sslip.io/.well-known/oauth-protected-resource/mcp"
+OAuth metadata       -> 200 / 200
+Store                -> 200
+== Each person's tools
+[ana@urumi.test] 12 tools: shipping__list_carriers, shipping__quote_shipping, slack__channel_info, slack__read_messages, store-north__get_order, store-north__list_orders, store-north__list_products, s
+[bob@urumi.test] 15 tools: shipping__list_carriers, shipping__quote_shipping, slack__channel_info, slack__read_messages, store-south__get_order, store-south__list_orders, store-south__list_products, s
+[chen@urumi.test] 9 tools: shipping__list_carriers, shipping__quote_shipping, slack__channel_info, slack__read_messages, supplier__list_products, supplier__quote_restock, woo__get_order, woo__list_ord
+[dev@urumi.test] 9 tools: shipping__list_carriers, shipping__quote_shipping, slack__channel_info, slack__read_messages, supplier__list_products, supplier__quote_restock, woo__get_order, woo__list_orde
+search mode (bob)    -> [bob@urumi.test] 2 tools: gateway__call_tool, gateway__search_tools
+== Stores
+north      Ready        http://north.34-67-189-86.sslip.io       owner=ana@urumi.test tools=store-north__* (ok)
+south      Ready        http://south.34-67-189-86.sslip.io       owner=bob@urumi.test tools=store-south__* (ok)
+west-sports Ready        http://west-sports.34-67-189-86.sslip.io owner=bob@urumi.test tools=store-west-sports__* (ok)
+== Pods not Running/Completed
+(none listed above means all good)

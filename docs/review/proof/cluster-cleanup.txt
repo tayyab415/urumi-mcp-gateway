@@ -1,0 +1,40 @@
+$ bash scripts/gcp-vm.sh kube get pods -n urumi-app -o wide
+NAME                                 READY   STATUS    RESTARTS   AGE     IP            NODE                    NOMINATED NODE   READINESS GATES
+urumi-chat-5bc748f69d-bv5cx          1/1     Running   0          9h      10.42.0.110   k3d-urumi-vm-server-0   <none>           <none>
+urumi-dashboard-7f8d55cfd8-kszzm     1/1     Running   0          8h      10.42.0.167   k3d-urumi-vm-server-0   <none>           <none>
+urumi-gateway-6756449fc5-ptwdf       1/1     Running   0          6m3s    10.42.0.177   k3d-urumi-vm-server-0   <none>           <none>
+urumi-provisioner-65ff4cfc56-sr7bn   1/1     Running   0          25m     10.42.0.171   k3d-urumi-vm-server-0   <none>           <none>
+urumi-shipping-668b6d4657-njs4c      1/1     Running   0          9h      10.42.0.140   k3d-urumi-vm-server-0   <none>           <none>
+urumi-slack-mcp-58b6b7d4cd-8s9wg     1/1     Running   0          10h     10.42.0.108   k3d-urumi-vm-server-0   <none>           <none>
+urumi-supplier-79f8b474c-zkg5f       1/1     Running   0          7m26s   10.42.0.176   k3d-urumi-vm-server-0   <none>           <none>
+urumi-woo-mcp-56dbc88cfd-zmz77       1/1     Running   0          11h     10.42.0.96    k3d-urumi-vm-server-0   <none>           <none>
+exit 0
+
+$ bash scripts/gcp-vm.sh kube get namespaces -l urumi.io/store=true -o custom-columns=NAME:.metadata.name,PHASE:.status.phase
+NAME                PHASE
+store-north         Active
+store-south         Active
+store-west-sports   Active
+exit 0
+
+$ bash scripts/gcp-vm.sh kube get namespace store-review-astra --ignore-not-found -o name
+exit 0
+
+$ bash scripts/gcp-vm.sh kube get pv -o custom-columns=NAME:.metadata.name,CLAIM:.spec.claimRef.namespace,STATUS:.status.phase
+NAME                                       CLAIM               STATUS
+pvc-359aca22-2661-415a-b1d0-87c1d4d58048   store-north         Bound
+pvc-381808a1-04fb-4d3d-b0ca-ab2d30a98560   store-south         Bound
+pvc-57c9d92c-5fe0-44d7-bca4-6aead10541af   urumi-store         Bound
+pvc-69dc63bf-f7c4-4c9b-a2f6-c782397a7503   store-south         Bound
+pvc-7345a8cc-eba1-46d2-bb52-e8588d55ca84   urumi-store         Bound
+pvc-a8fca675-6b0e-4c2c-88b6-6d1afdbc01f6   store-west-sports   Bound
+pvc-d6ac34e1-1921-45e2-a4fc-97e7541cf415   store-north         Bound
+pvc-d8820f16-e42d-4e99-85a3-702559f89a98   urumi-app           Bound
+pvc-e71f5b61-c17f-4f07-87ed-3214fc657180   store-west-sports   Bound
+exit 0
+
+$ bash scripts/gcp-vm.sh kube get namespace urumi-app urumi-store -o custom-columns=NAME:.metadata.name,PSS:.metadata.labels.pod-security\.kubernetes\.io/enforce
+NAME          PSS
+urumi-app     restricted
+urumi-store   <none>
+exit 0

@@ -114,6 +114,7 @@ where to look.
 | 6. Security hardening | Tool pinning against changed or injected tool descriptions; SSRF checks at save and connect time; default-deny NetworkPolicies; non-root Pods (Pod Security "restricted"); least-privilege RBAC plus an admission policy for the provisioner, which also keeps store namespaces at Pod Security "baseline" or stricter; upstream credentials encrypted at rest; Host check, POST-only `/mcp` | design note §15-16, [docs/threat-model.md](docs/threat-model.md) |
 | 7. Scaling (partial) | Rate limits per API key and per chat session: at the Ingress, and again inside the gateway per verified credential, so rewriting the header does not reset them. One gateway replica only (SQLite) | design note §11 |
 | 8. Observability (partial) | Calls, errors, p50/p95 per server and the slowest tools on the Overview page; clear reasons for unreachable upstreams and failed calls | Overview page, design note §7-8 |
+| Independent review | A separate agent attacked the finished system and confirmed 11 findings (7 Critical). All were fixed the same day, each with a test, and checked again on the live system | [docs/review/fixes.md](docs/review/fixes.md), [the full report](docs/review/astra-review.md) |
 | 9. Upgrades and rollback | Content-hashed image tags, `helm upgrade`, a rollback done live, and what rollback cannot undo | design note §12 |
 
 ## Read more
@@ -191,7 +192,7 @@ Each service has its own: `cd services/<name> && uv run pytest -q`.
 
 | Service | Tests |
 |---|---|
-| gateway | 60 (MCP, roles, OAuth, search mode, pinning, result cap, audit across a crash, rate limit, SSRF, stores) |
+| gateway | 62 (MCP, roles, OAuth, search mode, pinning, result cap, audit across a crash, rate limit, SSRF, stores) |
 | chat-agent | 29, plus one live test against Bedrock (`RUN_LIVE_BEDROCK=1`) |
 | slack-mcp | 14 |
 | woo-mcp | 10 |

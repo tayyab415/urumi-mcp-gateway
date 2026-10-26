@@ -1,0 +1,5 @@
+Delete API response: Deleting
+Namespace phase immediately after delete: Deleting
+Namespace phase when prior reconciliation finishes: Ready
+Namespace deletion called: False
+Operations: [('annotate', {'urumi.io/helm-attempts': '1'}), ('annotate', {'urumi.io/phase': 'Deleting', 'urumi.io/reason': 'Deleting'}), ('annotate', {'urumi.io/phase': 'Ready', 'urumi.io/reason': '', 'urumi.io/ready-at': '2026-10-26T11:12:18Z'})]

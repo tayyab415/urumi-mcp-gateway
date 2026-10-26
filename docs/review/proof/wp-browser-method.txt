@@ -1,0 +1,3 @@
+UTC 2026-10-26T11:20:59Z
+command: review_session /run wp_bridge.py
+First-store WordPress sign-in bridge ready. No credential persisted.

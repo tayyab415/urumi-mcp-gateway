@@ -1,0 +1,6 @@
+UTC 2026-10-26T10:49:48.633502+00:00
+cwd /home/tayyabkhan/urumi-learning/services/woo-mcp
+command uv run pytest -q -p no:cacheprovider
+exit 0
+..........                                                               [100%]
+10 passed in 9.29s

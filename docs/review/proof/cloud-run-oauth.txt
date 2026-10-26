@@ -1,0 +1,14 @@
+UTC 2026-10-26T11:17:32Z
+command: review_session /run cloud_oauth.py
+registration {"status": 201, "auth_method": "none", "has_secret": false}
+wrong audience {"status": 302, "redirect_error": ["invalid_target"], "body": ""}
+redirect path trick {"status": 400, "redirect_error": null, "body": {"error": "invalid_request", "error_description": "Redirect URI 'http://127.0.0.1:19867/other' not registered for client", "state": "review-state"}}
+redirect userinfo trick {"status": 400, "redirect_error": null, "body": {"error": "invalid_request", "error_description": "Redirect URI 'http://127.0.0.1:19867@example.invalid/callback' not registered for client", "state": "review-state"}}
+plain PKCE {"status": 302, "redirect_error": ["invalid_request"], "body": ""}
+consent owner {"status": 200, "Bob": true, "frame_denied": true}
+token wrong audience {"status": 400, "body": {"error": "invalid_target", "error_description": "this server only issues tokens for https://urumi-1027824348124.us-central1.run.app/mcp"}}
+token exchange {"status": 200, "expires_in": 3600}
+OAuth tools {"status": 200, "tools": ["shipping__list_carriers", "shipping__quote_shipping", "slack__channel_info", "slack__read_messages", "store-south__get_order", "store-south__list_orders", "store-south__list_products", "store-west-sports__get_order", "store-west-sports__list_orders", "store-west-sports__list_products", "supplier__list_products", "supplier__quote_restock", "woo__get_order", "woo__list_orders", "woo__list_products"]}
+reused authorization code {"status": 400, "body": {"error": "invalid_grant", "error_description": "authorization code was already used"}}
+first access token after code reuse {"status": 401, "body": {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Invalid, expired or revoked access token"}}}
+Restored review request defaults after Cloud Run OAuth tests.

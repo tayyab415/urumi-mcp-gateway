@@ -1,0 +1,4 @@
+UTC 2026-10-26T11:28:01Z
+command: review_session /run stop_review_bridge.py
+Review credential runner shutdown scheduled for its own process only.
+Verified: loopback 18794 connection refused after shutdown.

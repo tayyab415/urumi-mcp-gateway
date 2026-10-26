@@ -1,0 +1,3 @@
+While write has committed: audit rows 0
+After gateway process SIGKILL: write marker exists True audit rows 0
+Child exit -9 Only the review-created subprocess was killed. No live Pod or store was changed.

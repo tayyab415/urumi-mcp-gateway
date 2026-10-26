@@ -1,0 +1,3 @@
+UTC 2026-10-26T10:53:55Z
+command: review_session /run fix_redaction.py
+All saved key prefixes reduced to first six characters.

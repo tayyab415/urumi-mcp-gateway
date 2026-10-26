@@ -1,0 +1,13 @@
+UTC 2026-10-26 11:21.
+Commands: T3 preview_open /wp-admin/, ephemeral login bridge, preview_navigate
+/wp-admin/admin.php?page=wc-orders, preview_evaluate of #the-list tr text.
+URL: https://shop.34-67-189-86.sslip.io/wp-admin/admin.php?page=wc-orders
+Title: Orders ‹ Urumi Sports — WordPress.
+Rows:
+  #47 Meera Iyer | Processing | INR 799.00
+  #45 Meera Iyer | Processing | INR 1,995.00
+  #44 Asha Rao   | Processing | INR 1,199.00
+These were existing orders, not orders created by this review.
+Screenshot: woocommerce-admin-orders.png.
+The review's new COD order was #16 in its temporary Review Astra store; it was
+confirmed through the storefront and gateway before that store was deleted.

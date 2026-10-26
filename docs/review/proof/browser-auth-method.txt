@@ -1,0 +1,3 @@
+UTC 2026-10-26T10:51:38Z
+command: review_session /run bridge_setup.py
+Installed ephemeral browser sign-in bridge. No credential persisted.

@@ -1,0 +1,8 @@
+pod "urumi-provisioner-65ff4cfc56-4nz7p" deleted from urumi-app namespace
+NAME                                 READY   STATUS    RESTARTS   AGE   IP            NODE                    NOMINATED NODE   READINESS GATES
+urumi-provisioner-65ff4cfc56-sr7bn   1/1     Running   0          24s   10.42.0.171   k3d-urumi-vm-server-0   <none>           <none>
+NAME                                      READY   STATUS    RESTARTS   AGE
+review-astra-mariadb-0                    0/1     Running   0          36s
+review-astra-store-setup-69b75            1/1     Running   0          36s
+review-astra-woo-mcp-56bff8d649-8ddsb     1/1     Running   0          36s
+review-astra-wordpress-77bdd9b4bb-b8smg   0/1     Running   0          36s

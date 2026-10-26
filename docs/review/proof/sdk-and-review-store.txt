@@ -1,0 +1,16 @@
+UTC 2026-10-26T10:58:05Z
+command: review_session /run sdk_and_store.py
+SDK client exit 0
+SDK stdout SDK protocol 2026-07-28
+Before revoke, tools 15
+Revoke HTTP 200
+Next call on same SDK client refused: MCPError Invalid or revoked API key
+
+SDK stderr 
+chen review-store tools {"status": 200, "tools": ["store-review-astra__get_order", "store-review-astra__list_orders", "store-review-astra__list_products"]}
+bob review-store tools {"status": 200, "tools": []}
+admin review-store tools {"status": 200, "tools": ["store-review-astra__create_product", "store-review-astra__get_order", "store-review-astra__list_orders", "store-review-astra__list_products", "store-review-astra__update_order_status"]}
+retry same Chen store [200, {"slug": "review-astra", "name": "Review Astra", "namespace": "store-review-astra", "owner_id": 4, "owner_email": "chen@urumi.test", "phase": "Ready", "reason": "", "url": "http://review-astra.34-67-189-86.sslip.io", "admin_url": "http://review-astra.34-67-189-86.sslip.io/wp-admin/", "mcp_url": "http://review-astra-woo-mcp.store-review-astra.svc.cluster.local:8000/mcp", "created_at": "2026-10-26T10:54:53Z", "ready_at": "2026-10-26T10:56:24Z", "deadline": "2026-10-26T11:09:53Z", "server_slug": "store-review-astra", "registered": true, "server_status": "ok", "mine": true, "can_delete": true}]
+Bob cannot take Chen name [409, {"detail": "Someone else already has a store called 'review-astra'."}]
+Bob cannot delete Chen store [403, {"detail": "Only the person who created a store, or an admin, can delete it"}]
+Chen store call [200, {"jsonrpc": "2.0", "id": 1, "result": {"_meta": {"io.modelcontextprotocol/serverInfo": {"name": "woocommerce", "title": "WooCommerce store", "version": "0.1.0"}}, "content": [{"text": "{\n  \"products\": [\n    {\n      \"id\": 13,\n      \"name\": \"Cricket Batting Gloves\",\n      \"sku\": \"BAT-GLOVES\",\n      \"status\": \"publish\",\n      \"price\": \"1599\",\n      \"regular_price\": \"1599\",\n      \"stock_status\": \"instock\",\n      \"stock_quantity\": 10,\n      \"permalink\": \"http://review-astra.34-67-189-86.sslip.io/product/cricket-batting-gloves/\"\n    },\n    {\n      \"id\": 12,\n      \"name\": \"Tennis Ball Cricket Bat\",\n      \"sku\": \"TB-BAT\",\n      \"status\": \"publish\",\n      \"price\": \"1299\",\n      \"regular_price\": \"1299\",\n      \"stock_status\": \"instock\",\n      \"stock_quantity\": 12,\n      \"permalink\": \"http://review-astra.34-67-189-86.sslip.io/product/tennis-ball-cricket-bat/\"\n    }\n  ],\n  \"page\": 1,\n  \"per_page\": 2,\n  \"total\": 4,\n  \"total_pages\": 2\n}", "type": "text"}], "isError": false, "structuredContent": {"products": [{"id": 13, "name": "Cricket Batting Gloves", "sku": "BAT-GLOVES", "status": "publish", "price": "1599", "regular_price": "1599", "stock_status": "instock", "stock_quantity": 10, "permalink": "http://review-astra.34-67-189-86.sslip.io/product/cricket-batting-gloves/"}, {"id": 12, "name": "Tennis Ball Cricket Bat", "sku": "TB-BAT", "status": "publish", "price": "1299", "regular_price": "1299", "stock_status": "instock", "stock_quantity": 12, "permalink": "http://review-astra.34-67-189-86.sslip.io/product/tennis-ball-cricket-bat/"}], "page": 1, "per_page": 2, "total": 4, "total_pages": 2}}}]

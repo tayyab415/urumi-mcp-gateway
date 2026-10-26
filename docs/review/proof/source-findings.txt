@@ -1,0 +1,355 @@
+FILE services/gateway/gateway/core.py
+175:                 server.last_error = failure_.message
+176:             else:
+177:                 assert found is not None
+178:                 # Trust on first use: what a server offers when an admin first connects it
+179:                 # (or what the platform's own store servers offer) counts as reviewed.
+180:                 # Anything that changes or appears after that waits for an admin.
+181:                 trust_new = server.last_ok_at is None or server.managed_by is not None
+182:                 server.status, server.last_error, server.last_ok_at = "ok", None, now
+183:                 server.latency_ms, server.protocol_version = found.latency_ms, found.protocol_version
+184:                 self._merge_tools(server, found.tools, trust_new)
+185:             await s.commit()
+186:             return server
+187: 
+188:     @staticmethod
+189:     def _merge_tools(server: Server, discovered: list[types.Tool], trust_new: bool = True) -> None:
+190:         existing = {t.name: t for t in server.tools}
+191:         seen: set[str] = set()
+192:         for tool in discovered:
+193:             if len(public_name(server.slug, tool.name)) > 128:
+194:                 log.warning("skipping %s/%s: public name would exceed 128 characters", server.slug, tool.name)
+195:                 continue
+196:             seen.add(tool.name)
+197:             row = existing.get(tool.name)
+198:             annotations = tool.annotations.model_dump(by_alias=True, exclude_none=True) if tool.annotations else None
+199:             if row is None:
+200:                 # A tool that appears after the first review starts admin-only, whatever
+201:                 # it claims about itself: approving it must not open it to members as well.
+202:                 row = Tool(name=tool.name, allowed_roles=default_roles(tool.annotations) if trust_new else ["admin"])
+203:                 server.tools.append(row)
+204:             legacy = row.id is not None and row.definition_hash is None  # stored before pinning existed
+205:             row.title = tool.title
+206:             row.description = tool.description or ""
+207:             row.input_schema = tool.input_schema
+208:             row.output_schema = tool.output_schema
+209:             row.annotations = annotations
+210:             row.present = True
+211:             definition = definition_of(row)
+212:             row.definition_hash = definition_hash(definition)
+268:     async def call_tool(self, who: Identity, name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
+269:         """Authorize, route, time-limit and audit one tool call."""
+270:         arguments = arguments or {}
+271:         started = time.monotonic()
+272:         event = AuditEvent(
+273:             started_at=utcnow(),
+274:             user_id=who.user_id,
+275:             user_email=who.email,
+276:             via=who.via,
+277:             api_key_prefix=who.api_key_prefix,
+278:             chat_id=who.chat_id,
+279:             public_name=name[:200],
+280:             arguments=_truncate_json(arguments),
+281:         )
+282: 
+283:         def finish(outcome: str, result: types.CallToolResult, error: str | None = None) -> types.CallToolResult:
+284:             event.outcome = outcome
+285:             event.error = error
+286:             event.duration_ms = int((time.monotonic() - started) * 1000)
+287:             return result
+288: 
+289:         try:
+290:             result = await self._route(who, name, arguments, event, finish)
+291:         finally:
+292:             if getattr(event, "outcome", None) is None:
+293:                 # Cancelled (client went away) or crashed mid-call: record that too.
+294:                 event.outcome, event.duration_ms = "aborted", int((time.monotonic() - started) * 1000)
+295:             with anyio.CancelScope(shield=True):
+296:                 await self._record(event)
+297:         return result
+298: 
+299:     async def _route(self, who, name, arguments, event, finish) -> types.CallToolResult:  # noqa: ANN001
+300:         parts = split_name(name)
+300:         parts = split_name(name)
+301:         if parts is None:
+302:             return finish("unknown_tool", _error(f"Unknown tool {name!r}. Tool names look like 'server__tool'."), "malformed name")
+303:         slug, tool_name = parts
+304:         event.server_slug, event.tool_name = slug[:32], tool_name[:128]
+305: 
+306:         # Fresh read on every call: a client holding an old tool list cannot use
+307:         # a server that has since been disabled, or a tool it has lost access to.
+308:         async with self.db.session() as s:
+309:             server = await s.scalar(select(Server).where(Server.slug == slug))
+310:             tool = None
+311:             if server is not None:
+312:                 tool = await s.scalar(select(Tool).where(Tool.server_id == server.id, Tool.name == tool_name))
+313: 
+314:         if server is None or tool is None or not tool.present or not may_use_server(server, who):
+315:             return finish("unknown_tool", _error(f"Unknown tool {name!r}."), "not in catalog")
+316:         if not server.enabled:
+317:             return finish("disabled", _error(f"The {server.name} server is disabled by an admin."), "server disabled")
+318:         if pending_review(tool):
+319:             return finish("pending_review", _error(
+320:                 f"{name} is held back: the {server.name} server changed what this tool says it does, or added it, "
+321:                 "after an admin last reviewed it. An admin can review and approve it on the Permissions page."), "definition not approved")
+322:         if who.role not in tool.allowed_roles:
+323:             return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
+324: 
+365: 
+366:     async def _record(self, event: AuditEvent) -> None:
+367:         try:
+368:             async with self.db.session() as s:
+369:                 s.add(event)
+370:                 await s.commit()
+371:         except Exception:  # an audit write failure must be loud, but must not hide the result
+372:             log.exception("failed to write audit event for %s", event.public_name)
+373: 
+374: 
+375: _ONE_PROBLEM = re.compile(
+376:     r"(?P<field>[\w.\[\]-]+)\s+(?P<msg>.+?)\s*\[type=\w+, input_value=.*?, input_type=\w+\]\s*For further information visit \S+",
+377:     re.S,
+378: )
+379: _VALIDATION = re.compile(r"(?:Error executing tool \w+:\s*)?\d+ validation errors? for (\w+?)Arguments\s+(?P<rest>.*)", re.S)
+380: 
+381: 
+382: def tidy_error_text(text: str) -> str:
+383:     """Say what is wrong with the arguments without the validation library's internals.
+384: 
+385:     MCP servers built on pydantic report a bad argument with the library's class name
+386:     ("list_ordersArguments"), a type code, the offending value and a link to its docs
+387:     for a specific version. A person or a model needs only the field and the rule.
+388:     """
+389:     m = _VALIDATION.search(text)
+390:     if not m:
+391:         return text
+392:     problems = [f"{p['field']}: {p['msg'].strip()}" for p in _ONE_PROBLEM.finditer(m["rest"])]
+393:     if not problems:
+394:         return text
+395:     return f"Invalid arguments for {m.group(1)}. " + "; ".join(problems) + "."
+396: 
+397: 
+398: def _capped(result: types.CallToolResult) -> types.CallToolResult:
+399:     """Cut text content past MAX_RESULT_CHARS, and say so, instead of passing it all to the model."""
+400:     total, content, cut = 0, [], False
+401:     for c in result.content:
+402:         if isinstance(c, types.TextContent):
+403:             room = MAX_RESULT_CHARS - total
+404:             if len(c.text) > room:
+405:                 c = types.TextContent(type="text", text=c.text[: max(room, 0)])
+406:                 cut = True
+407:             total += len(c.text)
+408:         content.append(c)
+409:         if cut:
+410:             break
+411:     if not cut:
+412:         return result
+413:     content.append(types.TextContent(type="text", text=f"[gateway: result truncated at {MAX_RESULT_CHARS} characters]"))
+414:     structured = result.structured_content if len(json.dumps(result.structured_content or {}, default=str)) <= MAX_RESULT_CHARS else None
+415:     return types.CallToolResult(content=content, is_error=result.is_error, structured_content=structured)
+416: 
+417: 
+418: def _error(message: str) -> types.CallToolResult:
+419:     return types.CallToolResult(content=[types.TextContent(type="text", text=message)], is_error=True)
+420: 
+FILE services/gateway/gateway/toolsearch.py
+115:         ),
+116:     ]
+117: 
+118: 
+119: async def search(gateway: Gateway, who: Identity, arguments: dict[str, Any]) -> types.CallToolResult:
+120:     query = str(arguments.get("query") or "").strip()
+121:     try:
+122:         limit = max(1, min(MAX_LIMIT, int(arguments.get("limit") or DEFAULT_LIMIT)))
+123:     except (TypeError, ValueError):
+124:         limit = DEFAULT_LIMIT
+125:     if not query:
+126:         return _error("Give a query: a few words about what you want to do.")
+127:     visible = {public_name(server.slug, tool.name): (server, tool) for server, tool in await gateway.visible_tools(who)}
+128:     docs = [
+129:         (name, f"{name.replace('__', ' ').replace('_', ' ').replace('-', ' ')} {server.name} {tool.title or ''} {tool.description}")
+130:         for name, (server, tool) in visible.items()
+131:     ]
+132:     hits = []
+133:     for name, score in rank(query, docs, limit):
+134:         server, tool = visible[name]
+135:         hits.append({
+136:             "name": name,
+137:             "server": server.name,
+138:             "description": clean_description(tool.description),
+139:             "read_only": bool((tool.annotations or {}).get("readOnlyHint")),
+140:             "input_schema": tool.input_schema,
+141:             "score": round(score, 2),
+142:         })
+143:     payload = {"query": query, "matches": hits, "searched": len(visible)}
+144:     text = json.dumps(payload, ensure_ascii=False)
+145:     if not hits:
+146:         text = f"No tools match {query!r} among the {len(visible)} you can use. Try other words."
+147:     return types.CallToolResult(content=[types.TextContent(type="text", text=text)], structured_content=payload)
+148: 
+149: 
+150: async def call(gateway: Gateway, who: Identity, arguments: dict[str, Any]) -> types.CallToolResult:
+151:     name = str(arguments.get("name") or "")
+152:     inner = arguments.get("arguments") or {}
+153:     if name in META_TOOLS:
+154:         return _error(f"{CALL} calls upstream tools, not itself or {SEARCH}.")
+155:     if not isinstance(inner, dict):
+156:         return _error("'arguments' must be an object.")
+157:     # The audit row is written under the real tool's name, marked as reached through search.
+158:     return await gateway.call_tool(replace(who, via=f"{who.via}-search"), name, inner)  # type: ignore[arg-type]
+159: 
+160: 
+161: def _error(message: str) -> types.CallToolResult:
+162:     return types.CallToolResult(content=[types.TextContent(type="text", text=message)], is_error=True)
+FILE services/gateway/gateway/mcp_endpoint.py
+48: def build_server(gateway: Gateway) -> Server:
+49:     def identity(ctx: Any) -> Identity:
+50:         who = getattr(getattr(ctx.request, "state", None), "identity", None)
+51:         if not isinstance(who, Identity):  # unreachable behind ApiKeyAuth; fail closed anyway
+52:             raise MCPError(code=NOT_AUTHENTICATED, message="Not authenticated")
+53:         return who
+54: 
+55:     async def list_tools(ctx: Any, params: types.PaginatedRequestParams | None) -> types.ListToolsResult:
+56:         who = identity(ctx)
+57:         if who.tool_mode == "search":
+58:             return types.ListToolsResult(tools=await toolsearch.meta_tools(gateway, who))
+59:         return types.ListToolsResult(tools=await gateway.list_tools(who))
+60: 
+61:     async def call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
+62:         who = identity(ctx)
+63:         # The two search-mode tools answer in either mode, so a client that cached
+64:         # them keeps working; they are only *listed* in search mode.
+65:         if params.name == toolsearch.SEARCH:
+66:             return await toolsearch.search(gateway, who, params.arguments or {})
+67:         if params.name == toolsearch.CALL:
+68:             return await toolsearch.call(gateway, who, params.arguments or {})
+69:         return await gateway.call_tool(who, params.name, params.arguments)
+70: 
+71:     return Server(
+72:         "urumi-gateway",
+73:         version="0.1.0",
+74:         title="Urumi MCP gateway",
+75:         instructions=INSTRUCTIONS,
+144:     return next((v.decode("latin-1") for k, v in scope["headers"] if k.lower() == name), None)
+145: 
+146: 
+147: def _key_from(scope: Scope) -> str | None:
+148:     headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+149:     auth = headers.get("authorization", "")
+150:     if auth[:7].lower() == "bearer ":
+151:         return auth[7:].strip() or None
+152:     return headers.get("x-api-key") or None
+153: 
+154: 
+155: def _wants_search(scope: Scope) -> bool:
+156:     """`/mcp/search`, `/mcp?tools=search` or `X-Urumi-Tools: search` turns on search mode for this connection."""
+FILE charts/urumi-app/templates/provisioner.yaml
+23:   name: {{ $name }}
+24:   labels:
+25:     {{- include "urumi-app.labels" . | nindent 4 }}
+26: rules:
+27:   - apiGroups: [""]
+28:     resources: [namespaces]
+29:     verbs: [get, list, watch, create, patch, update, delete]
+30:   - apiGroups: [rbac.authorization.k8s.io]
+31:     resources: [rolebindings]
+32:     verbs: [create]
+33:   # "bind" lets it hand out exactly this one role, without holding it cluster-wide.
+34:   - apiGroups: [rbac.authorization.k8s.io]
+35:     resources: [clusterroles]
+36:     verbs: [bind]
+37:     resourceNames: [{{ $tenantRole }}]
+38: ---
+39: apiVersion: rbac.authorization.k8s.io/v1
+40: kind: ClusterRoleBinding
+41: metadata:
+42:   name: {{ $name }}
+43:   labels:
+105:         apiVersions: ["*"]
+106:         operations: [CREATE, UPDATE, DELETE]
+107:         resources: ["*/*"]
+108:         scope: "*"
+109:   matchConditions:
+110:     - name: is-the-provisioner
+111:       expression: request.userInfo.username == {{ $user | squote }}
+112:   variables:
+113:     - name: target
+114:       expression: >-
+115:         request.resource.resource == 'namespaces'
+116:           ? (request.operation == 'DELETE' ? oldObject : object)
+117:           : namespaceObject
+118:   validations:
+119:     - expression: >-
+120:         variables.target != null && has(variables.target.metadata.labels) &&
+121:         'urumi.io/store' in variables.target.metadata.labels &&
+122:         variables.target.metadata.labels['urumi.io/store'] == 'true'
+123:       message: The store provisioner may only change store namespaces (label urumi.io/store=true).
+124:     - expression: >-
+125:         !(request.resource.resource == 'namespaces' && request.operation == 'UPDATE') ||
+126:         (has(oldObject.metadata.labels) && 'urumi.io/store' in oldObject.metadata.labels &&
+127:          oldObject.metadata.labels['urumi.io/store'] == 'true')
+128:       message: The store provisioner may not turn an existing namespace into a store namespace.
+129: ---
+130: apiVersion: admissionregistration.k8s.io/v1
+131: kind: ValidatingAdmissionPolicyBinding
+132: metadata:
+133:   name: {{ $name }}-store-namespaces-only
+134:   labels:
+135:     {{- include "urumi-app.labels" . | nindent 4 }}
+136: spec:
+137:   policyName: {{ $name }}-store-namespaces-only
+138:   validationActions: [Deny]
+139: ---
+140: apiVersion: apps/v1
+141: kind: Deployment
+142: metadata:
+143:   name: {{ $name }}
+144:   labels:
+145:     {{- include "urumi-app.labels" . | nindent 4 }}
+FILE charts/urumi-app/templates/traefik-middlewares.yaml
+25:   name: {{ $.Release.Name }}-{{ $name }}-limit
+26:   labels:
+27:     {{- include "urumi-app.labels" $ | nindent 4 }}
+28: spec:
+29:   rateLimit:
+30:     average: {{ $limit.average }}
+31:     period: {{ $limit.period }}
+32:     burst: {{ $limit.burst }}
+33:     {{- with $limit.header }}
+34:     # One allowance per value of this header, e.g. per API key.
+35:     sourceCriterion:
+36:       requestHeaderName: {{ . }}
+37:     {{- end }}
+38: {{- end }}
+39: {{- end }}
+FILE services/gateway/gateway/api.py
+695:     # -- audit ----------------------------------------------------------------
+696: 
+697:     @r.get("/audit")
+698:     async def audit(
+699:         user: CurrentUser,
+700:         request: Request,
+701:         user_id: int | None = None,
+702:         server: str | None = None,
+703:         outcome: str | None = None,
+704:         via: Literal["mcp", "chat"] | None = None,
+705:         chat_id: str | None = None,
+706:         before_id: int | None = None,
+707:         after_id: int | None = None,
+708:         limit: Annotated[int, Query(ge=1, le=500)] = 100,
+709:     ) -> list[dict[str, Any]]:
+710:         q = select(AuditEvent).order_by(AuditEvent.id.desc()).limit(limit)
+711:         if user.role != "admin":
+712:             q = q.where(AuditEvent.user_id == user.id)  # members see their own calls only
+713:         elif user_id is not None:
+714:             q = q.where(AuditEvent.user_id == user_id)
+715:         if server:
+716:             q = q.where(AuditEvent.server_slug == server)
+717:         if outcome:
+718:             q = q.where(AuditEvent.outcome == outcome)
+719:         if via:
+720:             q = q.where(AuditEvent.via == via)
+721:         if chat_id:
+722:             q = q.where(AuditEvent.chat_id == chat_id)
+723:         if before_id:
+724:             q = q.where(AuditEvent.id < before_id)
+725:         if after_id:

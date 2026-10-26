@@ -1,0 +1,30 @@
+UTC 2026-10-26 11:16–11:19.
+Commands: T3 preview_open, preview_click, preview_evaluate, preview_recording_start/stop.
+
+Admin signed in at https://urumi-1027824348124.us-central1.run.app.
+Connect showed the correct run.app MCP URL and search URL; no page alert.
+Stores showed the first store "Urumi Sports" at the run.app hostname.
+Clicking that first Storefront button opened a new tab at:
+  https://urumi-1027824348124.us-central1.run.app/
+New tab title: Urumi. Heading: Overview. It displayed gateway tool-call metrics.
+It did not open https://shop.34-67-189-86.sslip.io/.
+Screenshot: cloud-run-wrong-storefront.png.
+
+Chen signed in at run.app and used chat:
+"What orders came in today in my Review Astra store? Get a shipping quote to
+Mumbai 400001 for 1 kg too. This is read-only."
+Conversation bMoPfzwA_h9ZP5imwF9csA.
+Tools event: 12 tools, including only Chen's store-review-astra__* tenant tools.
+No store-north__*, store-south__* or store-west-sports__* tools.
+store-review-astra__list_orders {"period":"today"}: success, order 16,
+processing, Review Practice Ball, quantity 1, 25.00 INR.
+shipping__quote_shipping {"country":"IN","postcode":"400001","weight_kg":1}:
+success, simulated rates 90 / 105 / 240 INR.
+Done event: 2 model steps, 2 tool calls, input 5274, cached input 2323, output 286.
+The answer streamed and displayed both results. UI said Done in 3s.
+Screenshot: cloud-run-chat.png. Recording: cloud-run-chat.mp4.
+
+Chen clicked Delete on Review Astra, then confirmed Delete after the countdown.
+The card disappeared and Chen's quota returned to 0 of 2.
+Recording: chen-delete-review-store.mp4.
+Independent API/resource checks are in final-live-state.txt and cluster-cleanup.txt.

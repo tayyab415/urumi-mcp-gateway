@@ -1,0 +1,12 @@
+UTC 2026-10-26T11:19:38Z
+command: review_session /run slack_write_check.py
+Slack post through gateway {"status": 200, "body": {"jsonrpc": "2.0", "id": 1, "result": {"_meta": {"io.modelcontextprotocol/serverInfo": {"name": "slack", "title": "Slack (one channel)", "version": "0.1.0"}}, "content": [{"text": "{\n  \"channel\": \"C0CBU62S26P\",\n  \"ts\": \"1793013578.085669\",\n  \"text_sent\": \"[review test] Astra gateway integration check. Temporary message, removed after verification.\",\n  \"posted_as\": \"Admin (via urumi)\"\n}", "type": "text"}], "isError": false, "structuredContent": {"channel": "C0CBU62S26P", "ts": "1793013578.085669", "text_sent": "[review test] Astra gateway integration check. Temporary message, removed after verification.", "posted_as": "Admin (via urumi)"}}}}
+ERROR KeyError: 'slack-bot-token'
+Traceback (most recent call last):
+  File "/home/tayyabkhan/urumi-learning/docs/review/review_session.py", line 68, in do_POST
+    with redirect_stdout(buf):exec(compile(script.read_text(),str(script),'exec'),globals())
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/docs/review/slack_write_check.py", line 12, in <module>
+    token=json.loads((ROOT/'.runtime/app/secrets.json').read_text())['slack-bot-token']
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+KeyError: 'slack-bot-token'

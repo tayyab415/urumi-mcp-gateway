@@ -1,0 +1,5 @@
+store review-fixture failed: Store setup failed: BackoffLimitExceeded: temporary plugin download outage
+Retry API: 200 Provisioning
+After actual reconcile: Failed Store setup failed: BackoffLimitExceeded: temporary plugin download outage
+Helm install called: False
+Operations: [('annotate', {'urumi.io/phase': 'Provisioning', 'urumi.io/reason': 'Retrying', 'urumi.io/deadline': '2026-10-26T11:28:03Z', 'urumi.io/helm-attempts': '0'}), ('helm_status', 'deployed'), ('annotate', {'urumi.io/phase': 'Failed', 'urumi.io/reason': 'Store setup failed: BackoffLimitExceeded: temporary plugin download outage'})]

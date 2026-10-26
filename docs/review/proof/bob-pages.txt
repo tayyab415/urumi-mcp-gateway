@@ -1,0 +1,110 @@
+[
+  {
+    "path": "/stores",
+    "url": "https://app.34-67-189-86.sslip.io/stores",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nStores\n\n2 of 2 of your stores used\n\nCreate store\nUrumi Sports\nshop.34-67-189-86.sslip.io\nReady\nThe first store: Helm release urumi in namespace urumi-store. Its tools are woo__*.\nInstalled with Helm, not managed here\nStorefront\nNorth Sports\nnorth.34-67-189-86.sslip.io\nReady\nNamespace store-north · created 9h ago by ana@urumi.test · ready in 2 min\nIts tools are visible to its owner and admins\nStorefront\nWP admin\nSouth Cricket Co\nsouth.34-67-189-86.sslip.io\nReady\nNamespace store-south · created 9h ago by you · ready in 2 min\nTools store-south__* · ok\nStorefront\nWP admin\nDelete\nWest Sports\nwest-sports.34-67-189-86.sslip.io\nReady\nNamespace store-west-sports · created 8h ago by you · ready in 1 min\nTools store-west-sports__* · ok\nStorefront\nWP admin\nDelete\nAssistant\nKimi K3\nThis page\nCreate a product called Training Ball for 25\nList orders placed today",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  },
+  {
+    "path": "/audit",
+    "url": "https://app.34-67-189-86.sslip.io/audit",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nAudit log\n\nYour tool calls, through chat and your API keys.\n\nAll servers\nAll outcomes\nSuccess\nRefused (role)\nRefused (disabled)\nRefused (unknown tool)\nUnreachable\nTimed out\nCredential rejected\nTool error\nChat and MCP\nChat only\nMCP clients only\nLive\nEvent\tUser\tVia\tWhen\tTook\tOutcome\n\nAssistant\nKimi K3\nThis page\nShow me today's orders with their totals\nWhich supplier items are out of stock?",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  },
+  {
+    "path": "/connect",
+    "url": "https://app.34-67-189-86.sslip.io/connect",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nConnect\n\nUse one URL a…",
+    "errors": []
+  },
+  {
+    "path": "/servers",
+    "url": "https://app.34-67-189-86.sslip.io/chat",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nKimi K3 · acting as bob@urumi.test\nAsk about your store\n\nEvery tool call goes through the gateway as you, and lands in the audit log. Changes stop for your approval first.\n\nWhat orders came in today?\nList the products in the store\nCreate a product called Training Ball for 25\nQuote shipping for the most recent order\nWhich supplier items are out of stock?",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  },
+  {
+    "path": "/permissions",
+    "url": "https://app.34-67-189-86.sslip.io/chat",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nKimi K3 · acting as bob@urumi.test\nAsk about your store\n\nEvery tool call goes through the gateway as you, and lands in the audit log. Changes stop for your approval first.\n\nWhat orders came in today?\nList the products in the store\nCreate a product called Training Ball for 25\nQuote shipping for the most recent order\nWhich supplier items are out of stock?",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  },
+  {
+    "path": "/team",
+    "url": "https://app.34-67-189-86.sslip.io/chat",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nKimi K3 · acting as bob@urumi.test\nAsk about your store\n\nEvery tool call goes through the gateway as you, and lands in the audit log. Changes stop for your approval first.\n\nWhat orders came in today?\nList the products in the store\nCreate a product called Training Ball for 25\nQuote shipping for the most recent order\nWhich supplier items are out of stock?",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  },
+  {
+    "path": "/overview",
+    "url": "https://app.34-67-189-86.sslip.io/chat",
+    "text": "Urumi\nChat\nStores\nConnect\nAudit log\nB\nBob\nmember\nKimi K3 · acting as bob@urumi.test\nAsk about your store\n\nEvery tool call goes through the gateway as you, and lands in the audit log. Changes stop for your approval first.\n\nWhat orders came in today?\nList the products in the store\nCreate a product called Training Ball for 25\nQuote shipping for the most recent order\nWhich supplier items are out of stock?",
+    "errors": [
+      {
+        "level": "error",
+        "text": "Access to fetch at 'http://localhost:18794/browser/bob' from origin 'https://app.34-67-189-86.sslip.io' has been blocked by CORS policy: Permission was denied for this request to access the `loopback` address space.",
+        "timestamp": "2026-10-26T10:51:06.753Z"
+      },
+      {
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_FAILED",
+        "timestamp": "2026-10-26T10:51:06.754Z"
+      }
+    ]
+  }
+]

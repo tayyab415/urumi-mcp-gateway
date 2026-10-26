@@ -1,0 +1,5 @@
+UTC 2026-10-26T11:00:23Z
+command: review_session /run cross_approval.py
+Bob approving admin held call [404, {"error": "No call is waiting for that decision."}]
+Bob continuing admin conversation [404, {"error": "Conversation not found. Start a new one."}]
+before owner approval, product lookup [200, {"jsonrpc": "2.0", "id": 1, "result": {"_meta": {"io.modelcontextprotocol/serverInfo": {"name": "woocommerce", "title": "WooCommerce store", "version": "0.1.0"}}, "content": [{"text": "{\n  \"products\": [],\n  \"page\": 1,\n  \"per_page\": 20,\n  \"total\": 0,\n  \"total_pages\": 0\n}", "type": "text"}], "isError": false, "structuredContent": {"products": [], "page": 1, "per_page": 20, "total": 0, "total_pages": 0}}}]

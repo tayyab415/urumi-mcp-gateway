@@ -1,0 +1,11 @@
+UTC 2026-10-26T10:50:57.378982+00:00
+cwd /home/tayyabkhan/urumi-learning/services/gateway
+command uv run pytest -q -p no:cacheprovider
+exit 0
+.............................................                            [100%]
+=============================== warnings summary ===============================
+tests/test_stores.py::test_store_lifecycle_registers_and_removes_tools
+  sys:1: SAWarning: DELETE statement on table 'servers' expected to delete 1 row(s); 0 were matched.  Please set confirm_deleted_rows=False within the mapper configuration to prevent this warning.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+45 passed, 1 warning in 98.50s (0:01:38)

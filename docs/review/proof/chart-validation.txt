@@ -1,0 +1,54 @@
+$ .runtime/bin/helm lint charts/urumi-app -f charts/urumi-app/values-local.yaml
+exit 1
+level=INFO msg="funcMap fail" message="images: no tag for urumi/woo-mcp. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/gateway. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/demo-mcps. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/demo-mcps. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/dashboard. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/chat-agent. Run: bash scripts/gcp-vm.sh build-images"
+==> Linting charts/urumi-app
+[INFO] Chart.yaml: icon is recommended
+[ERROR] templates/chat-agent.yaml: unable to parse YAML: error converting YAML to JSON: yaml: line 37: mapping values are not allowed in this context
+
+Error: 1 chart(s) linted, 1 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-app --namespace urumi-app -f charts/urumi-app/values-local.yaml
+exit 1
+Error: execution error at (urumi-app/templates/woo-mcp.yaml:26:20): images: no tag for urumi/woo-mcp. Run: bash scripts/gcp-vm.sh build-images
+
+Use --debug flag to render out invalid YAML
+$ .runtime/bin/helm lint charts/urumi-app -f charts/urumi-app/values-prod.yaml
+exit 1
+level=INFO msg="funcMap fail" message="images: no tag for urumi/woo-mcp. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/gateway. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/demo-mcps. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/demo-mcps. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/dashboard. Run: bash scripts/gcp-vm.sh build-images"
+level=INFO msg="funcMap fail" message="images: no tag for urumi/chat-agent. Run: bash scripts/gcp-vm.sh build-images"
+==> Linting charts/urumi-app
+[INFO] Chart.yaml: icon is recommended
+[ERROR] templates/chat-agent.yaml: unable to parse YAML: error converting YAML to JSON: yaml: line 37: mapping values are not allowed in this context
+
+Error: 1 chart(s) linted, 1 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-app --namespace urumi-app -f charts/urumi-app/values-prod.yaml
+exit 1
+Error: execution error at (urumi-app/templates/woo-mcp.yaml:26:20): images: no tag for urumi/woo-mcp. Run: bash scripts/gcp-vm.sh build-images
+
+Use --debug flag to render out invalid YAML
+$ .runtime/bin/helm lint charts/urumi-store -f charts/urumi-store/values-local.yaml
+exit 0
+==> Linting charts/urumi-store
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-store --namespace urumi-store -f charts/urumi-store/values-local.yaml
+exit 0
+Rendered 36931 bytes successfully
+$ .runtime/bin/helm lint charts/urumi-store -f charts/urumi-store/values-prod.yaml
+exit 0
+==> Linting charts/urumi-store
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-store --namespace urumi-store -f charts/urumi-store/values-prod.yaml
+exit 0
+Rendered 37664 bytes successfully

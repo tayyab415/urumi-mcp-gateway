@@ -1,0 +1,32 @@
+UTC 2026-10-26T11:22:42Z
+command: review_session /run cleanup_keys.py
+Revoke review-created key {"owner": "admin", "id": 12, "http": 200}
+Revoke review-created key {"owner": "ana", "id": 13, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 14, "http": 200}
+Revoke review-created key {"owner": "chen", "id": 15, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 16, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 17, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 18, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 19, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 20, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 21, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 22, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 23, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 24, "http": 200}
+Revoke review-created key {"owner": "bob", "id": 25, "http": 200}
+Review key final state admin {"http": 200, "keys": [{"id": 12, "revoked": true}]}
+Review key final state ana {"http": 200, "keys": [{"id": 13, "revoked": true}]}
+Review key final state bob {"http": 200, "keys": [{"id": 25, "revoked": true}, {"id": 24, "revoked": true}, {"id": 23, "revoked": true}, {"id": 22, "revoked": true}, {"id": 21, "revoked": true}, {"id": 20, "revoked": true}, {"id": 19, "revoked": true}, {"id": 18, "revoked": true}, {"id": 17, "revoked": true}, {"id": 16, "revoked": true}, {"id": 14, "revoked": true}]}
+Review key final state chen {"http": 200, "keys": [{"id": 15, "revoked": true}]}
+Revoked review key rejected https://app.34-67-189-86.sslip.io {"http": 401, "body": {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Invalid or revoked API key"}}}
+Revoked review key rejected https://urumi-1027824348124.us-central1.run.app {"http": 401, "body": {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Invalid or revoked API key"}}}
+Review-created public OAuth registrations {"count": 2, "active_grants": []}
+Sign out direct admin {"http": 200}
+Sign out direct ana {"http": 200}
+Sign out direct bob {"http": 200}
+Sign out direct chen {"http": 200}
+Sign out cloud admin {"http": 200}
+Sign out cloud ana {"http": 200}
+Sign out cloud bob {"http": 200}
+Sign out cloud chen {"http": 200}
+No pre-existing key was revoked. Revoked key and audit records are retained by the application.

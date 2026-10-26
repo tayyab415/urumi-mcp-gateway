@@ -1,0 +1,1033 @@
+---
+# Source: urumi-store/templates/store-setup.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urumi-store-setup
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: store-setup
+data:
+  store-setup.sh: |
+    #!/bin/sh
+    # Brings WordPress and WooCommerce to the state described by the Helm values.
+    # Every step checks the current state first, so running it again is safe.
+    set -eu
+    cd /var/www/html
+    
+    wait_for() {
+      description="$1"
+      shift
+      attempt=0
+      until "$@" >/dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        if [ "$attempt" -ge 120 ]; then
+          echo "Timed out waiting for $description." >&2
+          exit 1
+        fi
+        sleep 5
+      done
+      echo "Ready: $description."
+    }
+    
+    database_reachable() {
+      php -r '
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $db = mysqli_init();
+        $db->options(MYSQLI_OPT_CONNECT_TIMEOUT, 3);
+        exit(@$db->real_connect(getenv("WORDPRESS_DB_HOST"), getenv("WORDPRESS_DB_USER"),
+          getenv("WORDPRESS_DB_PASSWORD"), getenv("WORDPRESS_DB_NAME")) ? 0 : 1);'
+    }
+    
+    # The WordPress container copies its files and writes wp-config.php on first start.
+    wait_for "WordPress files" test -f wp-config.php
+    wait_for "the database" database_reachable
+    
+    if wp core is-installed; then
+      echo "WordPress is already installed."
+    else
+      # A throwaway password: store-setup.php sets the real one from the Secret,
+      # so it never appears in a command line or a log.
+      wp core install \
+        --url="$WORDPRESS_PUBLIC_URL" --title="$STORE_TITLE" \
+        --admin_user="$STORE_ADMIN_USER" --admin_email="$STORE_ADMIN_EMAIL" \
+        --admin_password="$(php -r 'echo bin2hex(random_bytes(24));')" --skip-email
+    fi
+    
+    [ "$(wp option get blogname)" = "$STORE_TITLE" ] || wp option update blogname "$STORE_TITLE"
+    
+    # Readable URLs such as /product/mug/, and the /wp-json/ path for the REST API.
+    if [ "$(wp option get permalink_structure)" != "/%postname%/" ]; then
+      wp rewrite structure "/%postname%/"
+    fi
+    
+    current="$(wp plugin get woocommerce --field=version 2>/dev/null || true)"
+    if [ -z "$current" ] || php -r 'exit(version_compare($argv[1], $argv[2], "<") ? 0 : 1);' "$current" "$WOOCOMMERCE_VERSION"; then
+      echo "Installing WooCommerce $WOOCOMMERCE_VERSION (found: ${current:-none})."
+      wp plugin install woocommerce --version="$WOOCOMMERCE_VERSION" --force
+    elif [ "$current" != "$WOOCOMMERCE_VERSION" ]; then
+      echo "WooCommerce $current is newer than $WOOCOMMERCE_VERSION; not downgrading."
+    fi
+    wp plugin is-active woocommerce || wp plugin activate woocommerce
+    wp wc update
+    
+    # Keep orders in WooCommerce's own tables (HPOS), the default for new stores.
+    # A browser install switches this on during the first admin visit, so a CLI
+    # install has to do it. On a store with old unsynced orders this fails loudly.
+    if [ "$(wp option get woocommerce_custom_orders_table_enabled)" != "yes" ]; then
+      wp wc hpos enable
+    fi
+    
+    wp eval-file /setup/store-setup.php
+    echo "Store setup finished."
+    
+  store-setup.php: |
+    <?php
+    // Runs inside WordPress through `wp eval-file`, after WooCommerce is active.
+    
+    // The Secret is the source of truth for the admin password, so rotating it is:
+    // change the Secret, then helm upgrade.
+    $admin = get_user_by('login', getenv('STORE_ADMIN_USER'));
+    if (!$admin) {
+        WP_CLI::error('Admin user ' . getenv('STORE_ADMIN_USER') . ' not found.');
+    }
+    if (!wp_check_password(getenv('STORE_ADMIN_PASSWORD'), $admin->user_pass, $admin->ID)) {
+        wp_set_password(getenv('STORE_ADMIN_PASSWORD'), $admin->ID);
+        WP_CLI::log('Set the admin password from the Secret.');
+    }
+    
+    // REST API key for woo-mcp. WooCommerce stores only a hash of the consumer key,
+    // so a key made in wp-admin could never be copied into a Secret afterwards. The
+    // Secret holds the key instead, and this row is made to match it.
+    $consumer_key = getenv('STORE_API_CONSUMER_KEY');
+    $consumer_secret = getenv('STORE_API_CONSUMER_SECRET');
+    if ($consumer_key && $consumer_secret) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'woocommerce_api_keys';
+        $hash = wc_api_hash($consumer_key);
+        $row = $wpdb->get_row($wpdb->prepare("SELECT key_id, consumer_secret FROM $table WHERE consumer_key = %s", $hash));
+        if (!$row) {
+            $wpdb->insert($table, [
+                'user_id' => $admin->ID,
+                'description' => 'Urumi MCP gateway (woo-mcp)',
+                'permissions' => 'read_write',
+                'consumer_key' => $hash,
+                'consumer_secret' => $consumer_secret,
+                'truncated_key' => substr($consumer_key, -7),
+            ]);
+            WP_CLI::log('Created the REST API key for woo-mcp.');
+        } elseif ($row->consumer_secret !== $consumer_secret) {
+            $wpdb->update($table, ['consumer_secret' => $consumer_secret], ['key_id' => $row->key_id]);
+            WP_CLI::log('Updated the REST API secret from the Secret.');
+        }
+    }
+    
+    $settings = [
+        'woocommerce_default_country' => getenv('STORE_COUNTRY'),
+        'woocommerce_currency' => getenv('STORE_CURRENCY'),
+        // New WooCommerce stores start hidden behind a "coming soon" page.
+        'woocommerce_coming_soon' => 'no',
+    ];
+    foreach ($settings as $name => $value) {
+        if (get_option($name) !== $value) {
+            update_option($name, $value);
+            WP_CLI::log("Set $name to $value.");
+        }
+    }
+    
+    // Skip the admin setup wizard; the values above already answer it.
+    if (!get_option('woocommerce_onboarding_profile')) {
+        update_option('woocommerce_onboarding_profile', ['skipped' => true]);
+    }
+    
+    // Shop, cart, checkout and my-account pages.
+    if (get_post_status(wc_get_page_id('checkout')) !== 'publish') {
+        WC_Install::create_pages();
+        WP_CLI::log('Created the WooCommerce pages.');
+    }
+    
+    // Cash on delivery: the test-friendly payment method the brief allows.
+    $cod = get_option('woocommerce_cod_settings', []);
+    if (($cod['enabled'] ?? 'no') !== 'yes') {
+        update_option('woocommerce_cod_settings', array_merge([
+            'title' => 'Cash on delivery',
+            'description' => 'Pay with cash upon delivery.',
+            'instructions' => 'Pay with cash upon delivery.',
+            'enable_for_methods' => [],
+            'enable_for_virtual' => 'yes',
+        ], $cod, ['enabled' => 'yes']));
+        WP_CLI::log('Enabled cash on delivery.');
+    }
+    
+    // Free shipping everywhere, so checkout always offers a shipping option.
+    $zone = new WC_Shipping_Zone(0);
+    if (!in_array('free_shipping', wp_list_pluck($zone->get_shipping_methods(), 'id'), true)) {
+        $zone->add_shipping_method('free_shipping');
+        WP_CLI::log('Added free shipping for all locations.');
+    }
+    
+    // The catalog is added once per version, so deleted products stay deleted.
+    // A version stays unfinished (and is retried next run) if a photo download failed.
+    $catalog = json_decode(file_get_contents('/setup/catalog.json'), true);
+    if (get_option('urumi_catalog_version') !== $catalog['version']) {
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        // Wikimedia asks for a descriptive User-Agent on downloads.
+        add_filter('http_headers_useragent', fn() => 'UrumiSportsSetup/1.0 (WooCommerce demo store; ' . home_url() . ')');
+    
+        $category_ids = [];
+        foreach ($catalog['categories'] as $name) {
+            $term = term_exists($name, 'product_cat') ?: wp_insert_term($name, 'product_cat');
+            if (is_wp_error($term)) {
+                WP_CLI::error("Could not create category $name: " . $term->get_error_message());
+            }
+            $category_ids[$name] = (int) $term['term_id'];
+        }
+    
+        $complete = true;
+        foreach ($catalog['products'] as $item) {
+            $product_id = wc_get_product_id_by_sku($item['sku']);
+            if (!$product_id) {
+                $product_id = urumi_create_product($item, $category_ids[$item['category']]);
+                WP_CLI::log("Added {$item['name']}.");
+            }
+            $product = wc_get_product($product_id);
+            if (!empty($item['image']) && !$product->get_image_id()) {
+                $image_id = media_sideload_image($item['image']['url'], $product_id, $item['name'], 'id');
+                if (is_wp_error($image_id)) {
+                    WP_CLI::warning("Photo for {$item['name']} failed: " . $image_id->get_error_message());
+                    $complete = false;
+                    continue;
+                }
+                $product->set_image_id($image_id);
+                $product->save();
+            }
+        }
+        urumi_update_credits_page($catalog['products']);
+        if ($complete) {
+            update_option('urumi_catalog_version', $catalog['version']);
+            WP_CLI::log("Catalog {$catalog['version']} is in place.");
+        }
+    }
+    
+    function urumi_create_product(array $item, int $category_id): int
+    {
+        $sizes = $item['sizes'] ?? [];
+        $product = $sizes ? new WC_Product_Variable() : new WC_Product_Simple();
+        $product->set_name($item['name']);
+        $product->set_sku($item['sku']);
+        $product->set_description($item['description'] ?? '');
+        $product->set_category_ids([$category_id]);
+        $product->set_status('publish');
+        if (!$sizes) {
+            $product->set_regular_price($item['price']);
+            $product->set_manage_stock(true);
+            $product->set_stock_quantity($item['stock']);
+            return $product->save();
+        }
+    
+        // A sized product is a parent row plus one variation row per size,
+        // each with its own SKU and stock count.
+        $attribute = new WC_Product_Attribute();
+        $attribute->set_name('Size');
+        $attribute->set_options(array_column($sizes, 'size'));
+        $attribute->set_visible(true);
+        $attribute->set_variation(true);
+        $product->set_attributes([$attribute]);
+        $parent_id = $product->save();
+        foreach ($sizes as $size) {
+            $variation = new WC_Product_Variation();
+            $variation->set_parent_id($parent_id);
+            $variation->set_attributes(['size' => $size['size']]);
+            $variation->set_sku($item['sku'] . '-' . preg_replace('/[^A-Z0-9]/', '', strtoupper($size['size'])));
+            $variation->set_regular_price($item['price']);
+            $variation->set_manage_stock(true);
+            $variation->set_stock_quantity($size['stock']);
+            $variation->save();
+        }
+        WC_Product_Variable::sync($parent_id);
+        return $parent_id;
+    }
+    
+    // CC BY and CC BY-SA photos need visible credit; this page lists it.
+    function urumi_update_credits_page(array $products): void
+    {
+        $items = '';
+        foreach ($products as $item) {
+            if (empty($item['image'])) {
+                continue;
+            }
+            $image = $item['image'];
+            $items .= sprintf(
+                '<li>%s: photo by %s, <a href="%s">%s</a>, from <a href="%s">Wikimedia Commons</a></li>',
+                esc_html($item['name']), esc_html($image['author']), esc_url($image['licenseUrl']),
+                esc_html($image['license']), esc_url($image['source'])
+            );
+        }
+        if ($items === '') {
+            return;
+        }
+        $content = "<p>Product photos are used under these licenses. They show the kind of item, not the exact product.</p>\n<ul>$items</ul>";
+        $page = get_page_by_path('image-credits');
+        if (!$page) {
+            wp_insert_post(['post_type' => 'page', 'post_status' => 'publish', 'post_name' => 'image-credits',
+                            'post_title' => 'Image credits', 'post_content' => $content]);
+        } elseif ($page->post_content !== $content) {
+            wp_update_post(['ID' => $page->ID, 'post_content' => $content]);
+        }
+    }
+    
+  catalog.json: |
+    {
+      "categories": [
+        "Football",
+        "Cricket",
+        "Basketball",
+        "Badminton"
+      ],
+      "products": [
+        {
+          "category": "Football",
+          "description": "Replica home shirt in classic white.",
+          "image": {
+            "author": "Chris Brown",
+            "license": "CC BY 2.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Beckham_shirt_Real_Madrid.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Beckham_shirt_Real_Madrid.jpg/960px-Beckham_shirt_Real_Madrid.jpg"
+          },
+          "name": "Real Madrid Home Jersey 2026/27",
+          "price": "6499",
+          "sizes": [
+            {
+              "size": "S",
+              "stock": 4
+            },
+            {
+              "size": "M",
+              "stock": 8
+            },
+            {
+              "size": "L",
+              "stock": 6
+            },
+            {
+              "size": "XL",
+              "stock": 2
+            }
+          ],
+          "sku": "RM-HOME-2627"
+        },
+        {
+          "category": "Football",
+          "description": "Replica home shirt in United red.",
+          "image": {
+            "author": "Matthew Bloomfield",
+            "license": "CC BY-SA 2.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Manchester_United_Home_Strip_201213.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Manchester_United_Home_Strip_201213.jpg/960px-Manchester_United_Home_Strip_201213.jpg"
+          },
+          "name": "Manchester United Home Jersey 2026/27",
+          "price": "5999",
+          "sku": "MUFC-HOME-2627",
+          "stock": 12
+        },
+        {
+          "category": "Football",
+          "description": "Firm-ground boots for grass pitches.",
+          "image": {
+            "author": "Erin Corey",
+            "license": "CC BY-SA 3.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Nike_Superfly_III.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Nike_Superfly_III.jpg/960px-Nike_Superfly_III.jpg"
+          },
+          "name": "Nike Mercurial Academy Boots",
+          "price": "7495",
+          "sizes": [
+            {
+              "size": "UK 7",
+              "stock": 3
+            },
+            {
+              "size": "UK 8",
+              "stock": 5
+            },
+            {
+              "size": "UK 9",
+              "stock": 4
+            },
+            {
+              "size": "UK 10",
+              "stock": 1
+            }
+          ],
+          "sku": "NIKE-MERC-ACAD"
+        },
+        {
+          "category": "Football",
+          "description": "Machine-stitched training ball, size 5.",
+          "image": {
+            "author": "Jarrett Campbell",
+            "license": "CC BY 2.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Nike_soccer_ball.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Nike_soccer_ball.jpg/960px-Nike_soccer_ball.jpg"
+          },
+          "name": "Nike Strike Football (Size 5)",
+          "price": "1995",
+          "sku": "NIKE-STRIKE-5",
+          "stock": 25
+        },
+        {
+          "category": "Cricket",
+          "description": "Replica one-day international jersey.",
+          "image": {
+            "author": "DesiBoy101",
+            "license": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Sachin_Tendulkar's_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum,_Pune.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Sachin_Tendulkar%27s_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg/960px-Sachin_Tendulkar%27s_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg"
+          },
+          "name": "India ODI Jersey (Adidas)",
+          "price": "4999",
+          "sku": "IND-ODI-JERSEY",
+          "stock": 15
+        },
+        {
+          "category": "Cricket",
+          "description": "Replica IPL match jersey.",
+          "image": {
+            "author": "DesiBoy101",
+            "license": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum,_Pune.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg/960px-Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg"
+          },
+          "name": "Mumbai Indians Jersey",
+          "price": "2999",
+          "sku": "MI-JERSEY",
+          "stock": 3
+        },
+        {
+          "category": "Cricket",
+          "description": "Full-size English willow bat, short handle.",
+          "image": {
+            "author": "Aravind Sivaraj (colour corrected by Begoon)",
+            "license": "CC BY-SA 3.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+            "source": "https://commons.wikimedia.org/wiki/File:A_modern_Cricket_bat_(back_view).jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/A_modern_Cricket_bat_%28back_view%29.jpg/960px-A_modern_Cricket_bat_%28back_view%29.jpg"
+          },
+          "name": "SG English Willow Bat",
+          "price": "12999",
+          "sku": "SG-EW-BAT",
+          "stock": 6
+        },
+        {
+          "category": "Cricket",
+          "description": "Red four-piece leather ball for longer formats.",
+          "image": {
+            "author": "Marie-Lan Nguyen",
+            "license": "CC BY 2.5",
+            "licenseUrl": "https://creativecommons.org/licenses/by/2.5",
+            "source": "https://commons.wikimedia.org/wiki/File:GandM_Purist_156g_cricket_ball_n01.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/GandM_Purist_156g_cricket_ball_n01.jpg/960px-GandM_Purist_156g_cricket_ball_n01.jpg"
+          },
+          "name": "SG Test Leather Ball",
+          "price": "1799",
+          "sku": "SG-TEST-BALL",
+          "stock": 20
+        },
+        {
+          "category": "Basketball",
+          "description": "Replica Icon Edition jersey in Lakers gold.",
+          "image": {
+            "author": "CNEcija12345",
+            "license": "CC BY-SA 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg/960px-Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg"
+          },
+          "name": "LA Lakers Icon Jersey",
+          "price": "6999",
+          "sku": "LAL-ICON",
+          "stock": 9
+        },
+        {
+          "category": "Basketball",
+          "description": "Indoor composite leather ball, size 7.",
+          "image": {
+            "author": "MrX",
+            "license": "CC BY-SA 3.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+            "source": "https://commons.wikimedia.org/wiki/File:Isolated_basketball.png",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/be/Isolated_basketball.png/960px-Isolated_basketball.png"
+          },
+          "name": "Molten BG4500 Basketball",
+          "price": "4999",
+          "sku": "MOLTEN-BG4500",
+          "stock": 10
+        },
+        {
+          "category": "Badminton",
+          "description": "Light, head-heavy racket for beginners.",
+          "image": {
+            "author": "annca",
+            "license": "CC0",
+            "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/deed.en",
+            "source": "https://commons.wikimedia.org/wiki/File:Badminton-1428046.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Badminton-1428046.jpg/960px-Badminton-1428046.jpg"
+          },
+          "name": "Yonex Nanoray Light 18i Racket",
+          "price": "2999",
+          "sku": "YONEX-NR18I",
+          "stock": 14
+        },
+        {
+          "category": "Badminton",
+          "description": "Nylon shuttlecocks, medium speed.",
+          "image": {
+            "author": "Tataffe",
+            "license": "CC BY-SA 3.0 de",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/de/deed.en",
+            "source": "https://commons.wikimedia.org/wiki/File:Shuttlecocks_Nylon_Gelb.jpeg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Shuttlecocks_Nylon_Gelb.jpeg/960px-Shuttlecocks_Nylon_Gelb.jpeg"
+          },
+          "name": "Yonex Mavis 350 Shuttles (Tube of 6)",
+          "price": "1199",
+          "sku": "YONEX-MAVIS350",
+          "stock": 2
+        }
+      ],
+      "version": "sports-v1"
+    }
+
+---
+# Source: urumi-store/templates/wordpress-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urumi-wordpress
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: wordpress
+data:
+  health.php: |
+    <?php
+    // Do not load WordPress: its installation wizard and redirects must stay usable.
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    if (($_GET['check'] ?? '') === 'live') {
+        echo '{"status":"ok"}';
+        exit;
+    }
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $db = mysqli_init();
+    $db->options(MYSQLI_OPT_CONNECT_TIMEOUT, 3);
+    $ready = @$db->real_connect(
+        getenv('WORDPRESS_DB_HOST'),
+        getenv('WORDPRESS_DB_USER'),
+        getenv('WORDPRESS_DB_PASSWORD'),
+        getenv('WORDPRESS_DB_NAME'),
+        3306
+    );
+    if ($ready) {
+        $ready = (bool) $db->query('SELECT 1');
+        $db->close();
+    }
+    http_response_code($ready ? 200 : 503);
+    echo $ready ? '{"status":"ok"}' : '{"status":"unavailable"}';
+    
+  php.ini: |
+    memory_limit = 256M
+    upload_max_filesize = 64M
+    post_max_size = 64M
+    max_execution_time = 120
+
+---
+# Source: urumi-store/templates/persistence.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: urumi-mariadb
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: mariadb
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: "8Gi"
+
+---
+# Source: urumi-store/templates/persistence.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: urumi-wordpress
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: wordpress
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: "8Gi"
+
+---
+# Source: urumi-store/templates/database.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-mariadb
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: mariadb
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: mariadb
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+
+---
+# Source: urumi-store/templates/wordpress.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-wordpress
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: wordpress
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: wordpress
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+# Source: urumi-store/templates/wordpress.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-wordpress
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: wordpress
+spec:
+  replicas: 1
+  # A shared writable WordPress installation must have only one active Pod.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: wordpress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-store
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: wordpress
+      annotations:
+        checksum/config: bcc02a5ae1a4bffa655872917fb1f076758ff123b6a10edb2b56986424ae0113
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: wordpress
+          image: "docker.io/library/wordpress:7.1.3-php8.3-apache@sha256:81a34254acaa6ff3b9a67268c2745e9a041c4094cbe5ccd35b75ed3bbdc033b5"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: urumi-mariadb
+            - name: WORDPRESS_DB_NAME
+              value: "wordpress"
+            - name: WORDPRESS_DB_USER
+              value: "wordpress"
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: wordpress-db-password
+            - name: WORDPRESS_PUBLIC_URL
+              value: "https://shop.example.com"
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('WP_HOME', getenv('WORDPRESS_PUBLIC_URL'));
+                define('WP_SITEURL', getenv('WORDPRESS_PUBLIC_URL'));
+                define('WP_MEMORY_LIMIT', '256M');
+                define('WP_MAX_MEMORY_LIMIT', '256M');
+          ports:
+            - name: http
+              containerPort: 80
+          startupProbe:
+            httpGet:
+              path: /urumi-health.php?check=live
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /urumi-health.php
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /urumi-health.php?check=live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: content
+              mountPath: /var/www/html
+            - name: config
+              mountPath: /var/www/html/urumi-health.php
+              subPath: health.php
+              readOnly: true
+            - name: config
+              mountPath: /usr/local/etc/php/conf.d/urumi.ini
+              subPath: php.ini
+              readOnly: true
+      volumes:
+        - name: content
+          persistentVolumeClaim:
+            claimName: urumi-wordpress
+        - name: config
+          configMap:
+            name: urumi-wordpress
+
+---
+# Source: urumi-store/templates/database.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: urumi-mariadb
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: mariadb
+spec:
+  replicas: 1
+  serviceName: urumi-mariadb
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: mariadb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-store
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: mariadb
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: mariadb
+          image: "docker.io/library/mariadb:11.4.13@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          env:
+            - name: MARIADB_DATABASE
+              value: "wordpress"
+            - name: MARIADB_USER
+              value: "wordpress"
+            - name: MARIADB_ROOT_HOST
+              value: localhost
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: wordpress-db-password
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: mariadb-root-password
+          ports:
+            - name: mysql
+              containerPort: 3306
+          startupProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: urumi-mariadb
+
+---
+# Source: urumi-store/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-store
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: urumi-store-urumi-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - "shop.example.com"
+      secretName: "urumi-store-tls"
+  rules:
+    - host: "shop.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-wordpress
+                port:
+                  number: 80
+
+---
+# Source: urumi-store/templates/ingress.yaml
+# Traefik middleware: plain HTTP visitors get a permanent redirect to HTTPS.
+# WordPress does not do this itself, and a shopper's login or checkout should
+# never go over plain HTTP.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: urumi-https
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# Source: urumi-store/templates/store-setup.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: urumi-store-setup
+  namespace: urumi-store
+  labels:
+    app.kubernetes.io/name: urumi-store
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "urumi-store-0.2.0"
+    app.kubernetes.io/component: store-setup
+  annotations:
+    # Helm runs this after every install and upgrade, once the other objects exist.
+    helm.sh/hook: post-install,post-upgrade
+    # Keep the finished Job so its logs stay readable; replace it on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-store
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: store-setup
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        # www-data in the WordPress image, so WordPress can still edit the files this writes.
+        runAsUser: 33
+        runAsGroup: 33
+        runAsNonRoot: true
+      affinity:
+        # The WordPress volume is ReadWriteOnce: it can only be mounted on one node.
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: urumi
+                  app.kubernetes.io/component: wordpress
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: wp-cli
+          image: "docker.io/library/wordpress:cli-2.12.0-php8.3@sha256:661db880e953da051abcac6c0a769767b995a82cd52101c003ca7438dd427d7d"
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "/setup/store-setup.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: urumi-mariadb
+            - name: WORDPRESS_DB_NAME
+              value: "wordpress"
+            - name: WORDPRESS_DB_USER
+              value: "wordpress"
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: wordpress-db-password
+            - name: WORDPRESS_PUBLIC_URL
+              value: "https://shop.example.com"
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('WP_HOME', getenv('WORDPRESS_PUBLIC_URL'));
+                define('WP_SITEURL', getenv('WORDPRESS_PUBLIC_URL'));
+                define('WP_MEMORY_LIMIT', '256M');
+                define('WP_MAX_MEMORY_LIMIT', '256M');
+            - name: HOME
+              value: /tmp
+            - name: WP_CLI_CACHE_DIR
+              value: /tmp/wp-cli-cache
+            - name: STORE_TITLE
+              value: "Urumi Sports"
+            - name: STORE_ADMIN_USER
+              value: "urumi-admin"
+            - name: STORE_ADMIN_EMAIL
+              value: "admin@example.com"
+            - name: STORE_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: wordpress-admin-password
+            # Optional so a Secret made before the REST key existed still installs.
+            - name: STORE_API_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: woo-consumer-key
+                  optional: true
+            - name: STORE_API_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-store-credentials
+                  key: woo-consumer-secret
+                  optional: true
+            - name: STORE_COUNTRY
+              value: "IN:MH"
+            - name: STORE_CURRENCY
+              value: "INR"
+            - name: WOOCOMMERCE_VERSION
+              value: "11.2.1"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - name: content
+              mountPath: /var/www/html
+            - name: setup
+              mountPath: /setup
+              readOnly: true
+            - name: php-config
+              mountPath: /usr/local/etc/php/conf.d/urumi.ini
+              subPath: php.ini
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: content
+          persistentVolumeClaim:
+            claimName: urumi-wordpress
+        - name: setup
+          configMap:
+            name: urumi-store-setup
+        - name: php-config
+          configMap:
+            name: urumi-wordpress
+        - name: tmp
+          emptyDir: {}
+

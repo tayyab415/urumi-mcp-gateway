@@ -1,0 +1,5 @@
+UTC 2026-10-26T11:08:14Z
+command: review_session /run live_controls.py
+Disable shipping {"status": 200, "enabled": false}
+Bob's next list shipping tools {"status": 200, "tools": []}
+Bob's cached direct call {"status": 200, "result": {"content": [{"text": "The Shipping (simulated) server is disabled by an admin.", "type": "text"}], "isError": true}}

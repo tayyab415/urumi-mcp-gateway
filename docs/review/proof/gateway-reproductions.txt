@@ -1,0 +1,5 @@
+NEW TOOL after registration: manual visible to member = []
+NEW TOOL after registration: provisioner visible to member = ['fixture-managed__new_export']
+RESULT CAP: small text + oversized structuredContent serialized bytes 300162 structured payload chars 300000 truncation marker False
+RESULT CAP: oversized image serialized bytes 400175 structured payload chars 0 truncation marker False
+RESULT CAP: plain text control serialized bytes 256255 structured payload chars 0 truncation marker True

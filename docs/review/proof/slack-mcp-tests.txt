@@ -1,0 +1,6 @@
+UTC 2026-10-26T10:49:35.777858+00:00
+cwd /home/tayyabkhan/urumi-learning/services/slack-mcp
+command uv run pytest -q -p no:cacheprovider
+exit 0
+..............                                                           [100%]
+14 passed in 8.30s

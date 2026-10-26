@@ -1,0 +1,113 @@
+2026-10-26 10:56:07,023 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager started
+2026-10-26 10:56:07,307 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager started
+2026-10-26 10:56:09,610 ERROR mcp.server.runner: modern request handler raised
+Traceback (most recent call last):
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/_streamable_http_modern.py", line 140, in _to_jsonrpc_response
+    result = await coro
+             ^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 836, in serve_one
+    return await runner.on_request(dctx, method, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 230, in _on_request
+    result = _dump_result(await call(ctx))
+                          ^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/_otel.py", line 44, in __call__
+    result = await call_next(ctx)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 217, in _inner
+    result = await entry.handler(ctx, typed_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/docs/review/wire_reproductions.py", line 28, in calling
+    if MODE=='protocol':raise RuntimeError('fixture exploded')
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: fixture exploded
+2026-10-26 10:56:09,649 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager shutting down
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/routing.py", line 678, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/routing.py", line 699, in app
+    await route.handle(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/routing.py", line 284, in handle
+    await self.app(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/streamable_http_manager.py", line 427, in __call__
+    await self.session_manager.asgi_app(scope, receive, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/transport_security.py", line 183, in __call__
+    await self.app(scope, replay, send)
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/streamable_http_manager.py", line 195, in _handle_request
+    await handle_modern_request(
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/_streamable_http_modern.py", line 469, in handle_modern_request
+    msg = await _to_jsonrpc_response(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/_streamable_http_modern.py", line 140, in _to_jsonrpc_response
+    result = await coro
+             ^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 836, in serve_one
+    return await runner.on_request(dctx, method, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 230, in _on_request
+    result = _dump_result(await call(ctx))
+                          ^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/_otel.py", line 44, in __call__
+    result = await call_next(ctx)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/mcp/server/runner.py", line 217, in _inner
+    result = await entry.handler(ctx, typed_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/docs/review/wire_reproductions.py", line 27, in calling
+    if MODE=='slow':await anyio.sleep(3)
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py", line 95, in sleep
+    return await get_async_backend().sleep(delay)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2592, in sleep
+    await sleep(delay)
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 665, in sleep
+    return await future
+           ^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+ERROR:    Traceback (most recent call last):
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/routing.py", line 663, in lifespan
+    await receive()
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+2026-10-26 10:56:09,671 INFO mcp.server.streamable_http_manager: StreamableHTTP session manager shutting down
+ERROR:    Traceback (most recent call last):
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/starlette/routing.py", line 663, in lifespan
+    await receive()
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/fastapi/telemetry/_runtime.py", line 214, in wrapped_receive
+    message = await receive()
+              ^^^^^^^^^^^^^^^
+  File "/home/tayyabkhan/urumi-learning/services/gateway/.venv/lib/python3.12/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+Real MCP SDK connected: 2026-07-28
+Initial tools: ['store-fixture__payload']
+Added upstream tool after first discovery, no admin approval. Member list: ['store-fixture__late_tool', 'store-fixture__payload']
+Wire result structured bytes 300236 isError False elapsed 0.21 text ['ok']
+Wire result image bytes 400249 isError False elapsed 0.23 text []
+Wire result slow bytes 293 isError True elapsed 1.07 text ['store-fixture did not answer within 1s.']
+Wire result protocol bytes 312 isError True elapsed 0.07 text ['store-fixture returned an MCP error: Internal server error']

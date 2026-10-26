@@ -1,0 +1,7 @@
+UTC 2026-10-26T11:09:24Z
+command: review_session /run search_audit_confirm.py
+Call {"name": "gateway__search_tools", "http": 200, "isError": false}
+Call {"name": "gateway__call_tool", "http": 200, "isError": false}
+Call {"name": "gateway__call_tool", "http": 200, "isError": true}
+New rows after three calls [{"public_name": "woo__list_products", "via": "mcp-search", "outcome": "ok", "arguments": "{\"search\": \"review-search-proof\"}"}]
+New rows with MCP clients filter {"http": 200, "rows": []}

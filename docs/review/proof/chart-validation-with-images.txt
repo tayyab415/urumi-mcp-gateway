@@ -1,0 +1,18 @@
+$ .runtime/bin/helm lint charts/urumi-app -f charts/urumi-app/values-local.yaml -f .runtime/app/images.yaml
+exit 0
+==> Linting charts/urumi-app
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-app -f charts/urumi-app/values-local.yaml -f .runtime/app/images.yaml
+exit 0
+Rendered successfully
+$ .runtime/bin/helm lint charts/urumi-app -f charts/urumi-app/values-prod.yaml -f .runtime/app/images.yaml
+exit 0
+==> Linting charts/urumi-app
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+$ .runtime/bin/helm template urumi charts/urumi-app -f charts/urumi-app/values-prod.yaml -f .runtime/app/images.yaml
+exit 0
+Rendered successfully

@@ -1,0 +1,7 @@
+UTC 2026-10-26T11:05:28Z
+command: review_session /run rate_variants.py
+exit 0
+stdout 100 requests, one key and identical header {200: 53, 429: 47} seconds 1.391
+100 requests, one key and different whitespace in header {200: 100} seconds 2.301
+
+stderr 

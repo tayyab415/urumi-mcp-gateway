@@ -1,0 +1,1206 @@
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# Everything in this namespace starts closed: no connection in, none out.
+# Each policy below opens one path, and Kubernetes adds them together.
+# k3s enforces these with its built-in network policy controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-default-deny
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# Browsers and MCP clients come in through Traefik, and only to these three.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-from-ingress
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [gateway, chat, dashboard]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: http
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# To get a certificate, cert-manager starts a short-lived "solver" Pod here.
+# The certificate authority fetches a token from it, through Traefik, over
+# plain HTTP. That proves we control the hostname.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-acme-solver
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchLabels: {acme.cert-manager.io/http01-solver: "true"}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 8089
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# The MCP servers accept connections from the gateway and nothing else. This
+# is what "nothing else talks to the upstream servers" rests on: woo-mcp
+# checks no credential of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-upstreams-from-gateway
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: ["woo-mcp","shipping","supplier"]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: gateway}
+      ports:
+        - port: http
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# The gateway: chat calls it from inside; it calls the MCP servers here, and
+# servers an admin adds by a public URL. Private ranges and cloud metadata stay
+# closed, a second layer under the URL check the gateway does at save time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-gateway
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: gateway}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: chat}
+      ports:
+        - port: http
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: ["woo-mcp","shipping","supplier"]}
+      ports:
+        - port: 8000
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","100.64.0.0/10","169.254.0.0/16"]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# woo-mcp may open connections to WordPress, and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-woo-mcp-to-store
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: woo-mcp}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: urumi-store}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: wordpress
+              app.kubernetes.io/instance: urumi
+      ports:
+        - port: 80
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+
+---
+# Source: urumi-app/templates/networkpolicy.yaml
+# Chat may call the gateway, and Bedrock over HTTPS. Nothing else, so it has
+# no path to the MCP servers or the store.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: urumi-chat
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: chat}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: gateway}
+      ports:
+        - port: 8080
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","100.64.0.0/10","169.254.0.0/16"]
+      ports:
+        - port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+
+---
+# Source: urumi-app/templates/gateway.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urumi-gateway-bootstrap
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: gateway
+data:
+  servers.json: "[{\"name\":\"WooCommerce\",\"slug\":\"woo\",\"timeout_seconds\":15,\"url\":\"http://urumi-woo-mcp:8000/mcp\"},{\"auth_type\":\"bearer\",\"credential_env\":\"SHIPPING_API_TOKEN\",\"name\":\"Shipping (simulated)\",\"slug\":\"shipping\",\"timeout_seconds\":5,\"url\":\"http://urumi-shipping:8000/mcp\"},{\"auth_header\":\"X-Supplier-Key\",\"auth_type\":\"header\",\"credential_env\":\"SUPPLIER_API_KEY\",\"name\":\"Supplier (simulated)\",\"slug\":\"supplier\",\"timeout_seconds\":5,\"url\":\"http://urumi-supplier:8000/mcp\"}]"
+  # The same list in the shape `python -m gateway.seed` reads. A gateway whose database already
+  # has servers ignores servers.json; seed.json adds the missing ones through the API.
+  seed.json: "{\"servers\":[{\"name\":\"WooCommerce\",\"slug\":\"woo\",\"timeout_seconds\":15,\"url\":\"http://urumi-woo-mcp:8000/mcp\"},{\"auth_type\":\"bearer\",\"credential_env\":\"SHIPPING_API_TOKEN\",\"name\":\"Shipping (simulated)\",\"slug\":\"shipping\",\"timeout_seconds\":5,\"url\":\"http://urumi-shipping:8000/mcp\"},{\"auth_header\":\"X-Supplier-Key\",\"auth_type\":\"header\",\"credential_env\":\"SUPPLIER_API_KEY\",\"name\":\"Supplier (simulated)\",\"slug\":\"supplier\",\"timeout_seconds\":5,\"url\":\"http://urumi-supplier:8000/mcp\"}]}"
+
+---
+# Source: urumi-app/templates/gateway.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: urumi-gateway-data
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: gateway
+  annotations:
+    # Users, API keys, servers, sealed credentials and the audit log live here.
+    # helm uninstall leaves this volume alone.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Source: urumi-app/templates/chat-agent.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-chat
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: chat
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: chat
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: urumi-app/templates/dashboard.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-dashboard
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: dashboard
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: dashboard
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: urumi-app/templates/demo-mcps.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-shipping
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: shipping
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: shipping
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: urumi-app/templates/demo-mcps.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-supplier
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: supplier
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: supplier
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: urumi-app/templates/gateway.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-gateway
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: gateway
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: urumi-app/templates/woo-mcp.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: urumi-woo-mcp
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: woo-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: woo-mcp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: urumi-app/templates/chat-agent.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-chat
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: chat
+spec:
+  # One replica: conversations and approvals waiting for a click live in memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: chat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: chat
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chat-agent
+          image: urumi/chat-agent:d75e0dafae0f
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Chat reaches tools only through the gateway, with the user's own
+            # chat token, so its calls are checked and audited as that user.
+            - name: GATEWAY_MCP_URL
+              value: "http://urumi-gateway:8080/mcp"
+            - name: CHAT_MODEL
+              value: "us.moonshotai.kimi-k3"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: HOME
+              value: /tmp
+            # The Bedrock credential: either a Bedrock API key, or an access key
+            # that signs short-lived Bedrock keys. Optional, so the rest of the
+            # system installs before one exists; chat then reports the error.
+            - name: AWS_BEARER_TOKEN_BEDROCK
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: bedrock-api-key
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: aws-access-key-id
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: aws-secret-access-key
+                  optional: true
+          # /healthz checks neither the gateway nor Bedrock. An outage there is
+          # an error in the chat, not a reason to restart this Pod.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 500m
+              memory: 384Mi
+            requests:
+              cpu: 25m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/dashboard.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-dashboard
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: dashboard
+spec:
+  # Static files only, so any number of replicas works.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: dashboard
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # uid 101 is nginx in the unprivileged nginx image.
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: urumi/dashboard:f57bc6c52806
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 5m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # nginx keeps its pid file and temporary files in /tmp.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/demo-mcps.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-shipping
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: shipping
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: shipping
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: shipping
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: shipping
+          image: urumi/demo-mcps:25b017ad15f4
+          imagePullPolicy: IfNotPresent
+          command: [".venv/bin/uvicorn", "demo_mcps.shipping:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: SHIPPING_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: shipping-api-token
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 200m
+              memory: 192Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/demo-mcps.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-supplier
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: supplier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: supplier
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: supplier
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: supplier
+          image: urumi/demo-mcps:25b017ad15f4
+          imagePullPolicy: IfNotPresent
+          command: [".venv/bin/uvicorn", "demo_mcps.supplier:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: SUPPLIER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: supplier-api-key
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 200m
+              memory: 192Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/gateway.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-gateway
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: gateway
+spec:
+  # One replica: SQLite allows one writer, and the volume mounts on one node.
+  replicas: 1
+  strategy:
+    # The old Pod lets go of the volume before the new one starts.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: urumi/gateway:157760e5b528
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: sqlite+aiosqlite:////data/gateway.db
+            - name: GATEWAY_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: gateway-secret-key
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              value: "admin@example.com"
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: admin-password
+            - name: BOOTSTRAP_SERVERS_FILE
+              value: /etc/urumi/servers.json
+            - name: SHIPPING_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: shipping-api-token
+            - name: SUPPLIER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: supplier-api-key
+            - name: PUBLIC_URL
+              value: "https://app.example.com"
+            # /mcp checks the Host header (DNS-rebinding protection). The public
+            # hostname comes from PUBLIC_URL; chat calls the in-cluster Service name.
+            - name: MCP_ALLOWED_HOSTS
+              value: "urumi-gateway:8080,urumi-gateway"
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS
+              value: "10"
+          # /readyz checks the gateway's own database only. A dead upstream makes
+          # its own tools fail; it must not take the gateway out of the Service.
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 4
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 384Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: bootstrap
+              mountPath: /etc/urumi
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: urumi-gateway-data
+        - name: bootstrap
+          configMap:
+            name: urumi-gateway-bootstrap
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/woo-mcp.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urumi-woo-mcp
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+    app.kubernetes.io/component: woo-mcp
+spec:
+  # Stateless (MCP over HTTP with JSON responses), so a replaced Pod loses nothing.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: urumi-app
+      app.kubernetes.io/instance: urumi
+      app.kubernetes.io/component: woo-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: urumi-app
+        app.kubernetes.io/instance: urumi
+        app.kubernetes.io/component: woo-mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: woo-mcp
+          image: urumi/woo-mcp:5cd0370ea512
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # woo-mcp calls WordPress over plain HTTP inside the cluster, so
+            # WordPress rebuilds the signed URL as http://<home host>/..., even
+            # when the public store is HTTPS. Sign that, with OAuth 1.0a
+            # (WooCommerce accepts Basic auth only over HTTPS).
+            - name: WOO_STORE_URL
+              value: "http://shop.example.com"
+            - name: WOO_AUTH
+              value: oauth1
+            - name: WOO_API_URL
+              value: "http://urumi-wordpress.urumi-store.svc.cluster.local"
+            - name: WOO_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: woo-consumer-key
+            - name: WOO_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: urumi-app-secrets
+                  key: woo-consumer-secret
+            - name: WOO_TIMEOUT_SECONDS
+              value: "15"
+          # /healthz does not call WooCommerce. A slow store shows up as tool
+          # errors and an "unreachable" status, not as restarts of this Pod.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 300m
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: urumi-app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-app
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: default-urumi-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["app.example.com"]
+      secretName: urumi-app-tls
+  rules:
+    - host: "app.example.com"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /.well-known/oauth-authorization-server
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /.well-known/oauth-protected-resource
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-dashboard
+                port: {name: http}
+
+---
+# Source: urumi-app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-login
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-urumi-https@kubernetescrd,default-urumi-login-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["app.example.com"]
+      secretName: urumi-app-tls
+  rules:
+    - host: "app.example.com"
+      http:
+        paths:
+          - path: /api/auth/login
+            pathType: Exact
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+
+---
+# Source: urumi-app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-oauth
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-urumi-https@kubernetescrd,default-urumi-login-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["app.example.com"]
+      secretName: urumi-app-tls
+  rules:
+    - host: "app.example.com"
+      http:
+        paths:
+          - path: /authorize
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /token
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /register
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /revoke
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+          - path: /oauth
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+
+---
+# Source: urumi-app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-mcp
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-urumi-https@kubernetescrd,default-urumi-mcp-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["app.example.com"]
+      secretName: urumi-app-tls
+  rules:
+    - host: "app.example.com"
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-gateway
+                port: {name: http}
+
+---
+# Source: urumi-app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: urumi-chat
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-urumi-https@kubernetescrd,default-urumi-chat-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["app.example.com"]
+      secretName: urumi-app-tls
+  rules:
+    - host: "app.example.com"
+      http:
+        paths:
+          - path: /api/chat
+            pathType: Prefix
+            backend:
+              service:
+                name: urumi-chat
+                port: {name: http}
+
+---
+# Source: urumi-app/templates/traefik-middlewares.yaml
+# Plain HTTP gets a permanent redirect to HTTPS. A request that is already
+# HTTPS passes through unchanged.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: urumi-https
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+
+---
+# Source: urumi-app/templates/traefik-middlewares.yaml
+# Up to `burst` requests at once, refilled at `average` per `period`. Past
+# that, Traefik answers 429 without calling the Service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: urumi-chat-limit
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  rateLimit:
+    average: 30
+    period: 1m
+    burst: 20
+    # One allowance per value of this header, e.g. per API key.
+    sourceCriterion:
+      requestHeaderName: Authorization
+
+---
+# Source: urumi-app/templates/traefik-middlewares.yaml
+# Up to `burst` requests at once, refilled at `average` per `period`. Past
+# that, Traefik answers 429 without calling the Service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: urumi-login-limit
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  rateLimit:
+    average: 20
+    period: 1m
+    burst: 10
+
+---
+# Source: urumi-app/templates/traefik-middlewares.yaml
+# Up to `burst` requests at once, refilled at `average` per `period`. Past
+# that, Traefik answers 429 without calling the Service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: urumi-mcp-limit
+  labels:
+    app.kubernetes.io/name: urumi-app
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: urumi-app-0.1.0
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 50
+    # One allowance per value of this header, e.g. per API key.
+    sourceCriterion:
+      requestHeaderName: Authorization

@@ -1,0 +1,6 @@
+UTC 2026-10-26T10:49:22.761961+00:00
+cwd /home/tayyabkhan/urumi-learning/services/demo-mcps
+command uv run pytest -q -p no:cacheprovider
+exit 0
+...                                                                      [100%]
+3 passed in 5.55s

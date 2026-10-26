@@ -1,0 +1,29 @@
+UTC 2026-10-26T11:20:06Z
+command: review_session /run final_live_checks.py
+Unknown tool https://app.34-67-189-86.sslip.io {"status": 200, "body": {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"text": "Unknown tool 'review__no_such_tool'.", "type": "text"}], "isError": true}}}
+Unauthenticated challenge https://app.34-67-189-86.sslip.io {"status": 401, "body": {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Missing API key"}}, "www-authenticate": "Bearer realm=\"urumi-gateway\", resource_metadata=\"https://urumi-1027824348124.us-central1.run.app/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:tools\""}
+Unknown tool https://urumi-1027824348124.us-central1.run.app {"status": 200, "body": {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"text": "Unknown tool 'review__no_such_tool'.", "type": "text"}], "isError": true}}}
+Unauthenticated challenge https://urumi-1027824348124.us-central1.run.app {"status": 401, "body": {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Missing API key"}}, "www-authenticate": "Bearer realm=\"urumi-gateway\", resource_metadata=\"https://urumi-1027824348124.us-central1.run.app/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:tools\""}
+Stores after browser deletion chen {"http": 200, "stores": [{"slug": "north", "phase": "Ready"}, {"slug": "south", "phase": "Ready"}, {"slug": "west-sports", "phase": "Ready"}]}
+Removed review store tools chen {"http": 200, "review_tools": []}
+Stores after browser deletion bob {"http": 200, "stores": [{"slug": "north", "phase": "Ready"}, {"slug": "south", "phase": "Ready"}, {"slug": "west-sports", "phase": "Ready"}]}
+Removed review store tools bob {"http": 200, "review_tools": []}
+Stores after browser deletion admin {"http": 200, "stores": [{"slug": "north", "phase": "Ready"}, {"slug": "south", "phase": "Ready"}, {"slug": "west-sports", "phase": "Ready"}]}
+Removed review store tools admin {"http": 200, "review_tools": []}
+Cloud Run page API admin /api/servers {"status": 200}
+Cloud Run page API admin /api/users {"status": 200}
+Cloud Run page API admin /api/audit {"status": 200}
+Cloud Run page API admin /api/tools {"status": 200}
+Cloud Run page API admin /api/chat/meta {"status": 200}
+Cloud Run page API bob /api/servers {"status": 200}
+Cloud Run page API bob /api/users {"status": 403}
+Cloud Run page API bob /api/audit {"status": 200}
+Cloud Run page API bob /api/tools {"status": 200}
+Cloud Run page API bob /api/chat/meta {"status": 200}
+Cloud Run page API chen /api/servers {"status": 200}
+Cloud Run page API chen /api/users {"status": 403}
+Cloud Run page API chen /api/audit {"status": 200}
+Cloud Run page API chen /api/tools {"status": 200}
+Cloud Run page API chen /api/chat/meta {"status": 200}
+Final server statuses [{"slug": "shipping", "enabled": true, "status": "ok"}, {"slug": "slack", "enabled": true, "status": "ok"}, {"slug": "store-north", "enabled": true, "status": "ok"}, {"slug": "store-south", "enabled": true, "status": "ok"}, {"slug": "store-west-sports", "enabled": true, "status": "ok"}, {"slug": "supplier", "enabled": true, "status": "ok"}, {"slug": "woo", "enabled": true, "status": "ok"}]
+Final OAuth grants {"status": 200, "body": []}

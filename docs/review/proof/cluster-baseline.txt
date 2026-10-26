@@ -1,0 +1,148 @@
+NAMESPACE           NAME                                           READY   STATUS      RESTARTS        AGE
+cert-manager        pod/cert-manager-55bb6b47cf-ngvzr              1/1     Running     0               10h
+cert-manager        pod/cert-manager-cainjector-7c84589448-rk6p5   1/1     Running     0               10h
+cert-manager        pod/cert-manager-webhook-7949787cd9-gr84f      1/1     Running     0               10h
+kube-system         pod/coredns-7cfb7bc9c7-8zsxq                   1/1     Running     0               4d12h
+kube-system         pod/local-path-provisioner-77b9867795-7wscx    1/1     Running     0               4d12h
+kube-system         pod/metrics-server-6dc596dfb8-v249s            1/1     Running     0               4d12h
+kube-system         pod/svclb-traefik-f95f0c1d-zgz2g               2/2     Running     8 (2d19h ago)   4d22h
+kube-system         pod/traefik-7c8544f77-v4bvc                    1/1     Running     0               4d12h
+store-north         pod/north-mariadb-0                            1/1     Running     0               8h
+store-north         pod/north-store-setup-mk2fh                    0/1     Completed   0               8h
+store-north         pod/north-woo-mcp-9889dd67c-l54mb              1/1     Running     0               8h
+store-north         pod/north-wordpress-7549f556d4-lvhpk           1/1     Running     0               8h
+store-south         pod/south-mariadb-0                            1/1     Running     0               8h
+store-south         pod/south-store-setup-xbzc6                    0/1     Completed   0               8h
+store-south         pod/south-woo-mcp-74df4796b5-4lfm9             1/1     Running     0               8h
+store-south         pod/south-wordpress-5677bc65d7-gnv2l           1/1     Running     0               8h
+store-west-sports   pod/west-sports-mariadb-0                      1/1     Running     0               8h
+store-west-sports   pod/west-sports-store-setup-bwjv2              0/1     Completed   0               8h
+store-west-sports   pod/west-sports-woo-mcp-5446c7d657-s2wv9       1/1     Running     0               8h
+store-west-sports   pod/west-sports-wordpress-7db7d7bb74-n9zp6     1/1     Running     0               8h
+urumi-app           pod/urumi-chat-5bc748f69d-bv5cx                1/1     Running     0               9h
+urumi-app           pod/urumi-dashboard-7f8d55cfd8-kszzm           1/1     Running     0               7h44m
+urumi-app           pod/urumi-gateway-5fd6ff7467-9wkvz             1/1     Running     0               8h
+urumi-app           pod/urumi-provisioner-65ff4cfc56-4nz7p         1/1     Running     0               8h
+urumi-app           pod/urumi-shipping-668b6d4657-njs4c            1/1     Running     0               8h
+urumi-app           pod/urumi-slack-mcp-58b6b7d4cd-8s9wg           1/1     Running     0               10h
+urumi-app           pod/urumi-supplier-79f8b474c-fmr2m             1/1     Running     0               8h
+urumi-app           pod/urumi-woo-mcp-56dbc88cfd-zmz77             1/1     Running     0               10h
+urumi-store         pod/urumi-mariadb-0                            1/1     Running     0               15h
+urumi-store         pod/urumi-store-setup-875v4                    0/1     Completed   0               10h
+urumi-store         pod/urumi-wordpress-85b4d5fd6d-4vl2x           1/1     Running     0               10h
+
+NAMESPACE           NAME                                      READY   UP-TO-DATE   AVAILABLE   AGE
+cert-manager        deployment.apps/cert-manager              1/1     1            1           10h
+cert-manager        deployment.apps/cert-manager-cainjector   1/1     1            1           10h
+cert-manager        deployment.apps/cert-manager-webhook      1/1     1            1           10h
+kube-system         deployment.apps/coredns                   1/1     1            1           4d22h
+kube-system         deployment.apps/local-path-provisioner    1/1     1            1           4d22h
+kube-system         deployment.apps/metrics-server            1/1     1            1           4d22h
+kube-system         deployment.apps/traefik                   1/1     1            1           4d22h
+store-north         deployment.apps/north-woo-mcp             1/1     1            1           8h
+store-north         deployment.apps/north-wordpress           1/1     1            1           8h
+store-south         deployment.apps/south-woo-mcp             1/1     1            1           8h
+store-south         deployment.apps/south-wordpress           1/1     1            1           8h
+store-west-sports   deployment.apps/west-sports-woo-mcp       1/1     1            1           8h
+store-west-sports   deployment.apps/west-sports-wordpress     1/1     1            1           8h
+urumi-app           deployment.apps/urumi-chat                1/1     1            1           15h
+urumi-app           deployment.apps/urumi-dashboard           1/1     1            1           15h
+urumi-app           deployment.apps/urumi-gateway             1/1     1            1           15h
+urumi-app           deployment.apps/urumi-provisioner         1/1     1            1           9h
+urumi-app           deployment.apps/urumi-shipping            1/1     1            1           15h
+urumi-app           deployment.apps/urumi-slack-mcp           1/1     1            1           14h
+urumi-app           deployment.apps/urumi-supplier            1/1     1            1           15h
+urumi-app           deployment.apps/urumi-woo-mcp             1/1     1            1           15h
+urumi-store         deployment.apps/urumi-wordpress           1/1     1            1           2d11h
+
+NAMESPACE           NAME                                   READY   AGE
+store-north         statefulset.apps/north-mariadb         1/1     8h
+store-south         statefulset.apps/south-mariadb         1/1     8h
+store-west-sports   statefulset.apps/west-sports-mariadb   1/1     8h
+urumi-store         statefulset.apps/urumi-mariadb         1/1     2d11h
+
+NAMESPACE           NAME                                          STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+store-north         persistentvolumeclaim/north-mariadb           Bound    pvc-359aca22-2661-415a-b1d0-87c1d4d58048   2Gi        RWO            local-path     <unset>                 8h
+store-north         persistentvolumeclaim/north-wordpress         Bound    pvc-d6ac34e1-1921-45e2-a4fc-97e7541cf415   2Gi        RWO            local-path     <unset>                 8h
+store-south         persistentvolumeclaim/south-mariadb           Bound    pvc-69dc63bf-f7c4-4c9b-a2f6-c782397a7503   2Gi        RWO            local-path     <unset>                 8h
+store-south         persistentvolumeclaim/south-wordpress         Bound    pvc-381808a1-04fb-4d3d-b0ca-ab2d30a98560   2Gi        RWO            local-path     <unset>                 8h
+store-west-sports   persistentvolumeclaim/west-sports-mariadb     Bound    pvc-e71f5b61-c17f-4f07-87ed-3214fc657180   2Gi        RWO            local-path     <unset>                 8h
+store-west-sports   persistentvolumeclaim/west-sports-wordpress   Bound    pvc-a8fca675-6b0e-4c2c-88b6-6d1afdbc01f6   2Gi        RWO            local-path     <unset>                 8h
+urumi-app           persistentvolumeclaim/urumi-gateway-data      Bound    pvc-d8820f16-e42d-4e99-85a3-702559f89a98   1Gi        RWO            local-path     <unset>                 15h
+urumi-store         persistentvolumeclaim/urumi-mariadb           Bound    pvc-7345a8cc-eba1-46d2-bb52-e8588d55ca84   8Gi        RWO            local-path     <unset>                 2d11h
+urumi-store         persistentvolumeclaim/urumi-wordpress         Bound    pvc-57c9d92c-5fe0-44d7-bca4-6aead10541af   8Gi        RWO            local-path     <unset>                 2d11h
+
+NAMESPACE           NAME                              TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)                      AGE
+cert-manager        service/cert-manager              ClusterIP      10.43.117.53    <none>        9402/TCP                     10h
+cert-manager        service/cert-manager-cainjector   ClusterIP      10.43.124.24    <none>        9402/TCP                     10h
+cert-manager        service/cert-manager-webhook      ClusterIP      10.43.72.152    <none>        443/TCP,9402/TCP             10h
+default             service/kubernetes                ClusterIP      10.43.0.1       <none>        443/TCP                      4d22h
+kube-system         service/kube-dns                  ClusterIP      10.43.0.10      <none>        53/UDP,53/TCP,9153/TCP       4d22h
+kube-system         service/metrics-server            ClusterIP      10.43.123.227   <none>        443/TCP                      4d22h
+kube-system         service/traefik                   LoadBalancer   10.43.127.154   172.18.0.3    80:30848/TCP,443:30690/TCP   4d22h
+store-north         service/north-mariadb             ClusterIP      None            <none>        3306/TCP                     8h
+store-north         service/north-woo-mcp             ClusterIP      10.43.21.1      <none>        8000/TCP                     8h
+store-north         service/north-wordpress           ClusterIP      10.43.103.223   <none>        80/TCP                       8h
+store-south         service/south-mariadb             ClusterIP      None            <none>        3306/TCP                     8h
+store-south         service/south-woo-mcp             ClusterIP      10.43.118.163   <none>        8000/TCP                     8h
+store-south         service/south-wordpress           ClusterIP      10.43.204.183   <none>        80/TCP                       8h
+store-west-sports   service/west-sports-mariadb       ClusterIP      None            <none>        3306/TCP                     8h
+store-west-sports   service/west-sports-woo-mcp       ClusterIP      10.43.33.132    <none>        8000/TCP                     8h
+store-west-sports   service/west-sports-wordpress     ClusterIP      10.43.117.22    <none>        80/TCP                       8h
+urumi-app           service/urumi-chat                ClusterIP      10.43.229.12    <none>        8000/TCP                     15h
+urumi-app           service/urumi-dashboard           ClusterIP      10.43.177.193   <none>        8080/TCP                     15h
+urumi-app           service/urumi-gateway             ClusterIP      10.43.146.131   <none>        8080/TCP                     15h
+urumi-app           service/urumi-provisioner         ClusterIP      10.43.194.170   <none>        8080/TCP                     9h
+urumi-app           service/urumi-shipping            ClusterIP      10.43.159.132   <none>        8000/TCP                     15h
+urumi-app           service/urumi-slack-mcp           ClusterIP      10.43.70.166    <none>        8000/TCP                     14h
+urumi-app           service/urumi-supplier            ClusterIP      10.43.207.242   <none>        8000/TCP                     15h
+urumi-app           service/urumi-woo-mcp             ClusterIP      10.43.18.243    <none>        8000/TCP                     15h
+urumi-store         service/urumi-mariadb             ClusterIP      None            <none>        3306/TCP                     2d11h
+urumi-store         service/urumi-wordpress           ClusterIP      10.43.18.228    <none>        80/TCP                       2d11h
+
+NAMESPACE           NAME                                          CLASS     HOSTS                               ADDRESS      PORTS     AGE
+store-north         ingress.networking.k8s.io/north-store         traefik   north.34-67-189-86.sslip.io         172.18.0.3   80        8h
+store-south         ingress.networking.k8s.io/south-store         traefik   south.34-67-189-86.sslip.io         172.18.0.3   80        8h
+store-west-sports   ingress.networking.k8s.io/west-sports-store   traefik   west-sports.34-67-189-86.sslip.io   172.18.0.3   80        8h
+urumi-app           ingress.networking.k8s.io/urumi-app           traefik   app.34-67-189-86.sslip.io           172.18.0.3   80, 443   15h
+urumi-app           ingress.networking.k8s.io/urumi-chat          traefik   app.34-67-189-86.sslip.io           172.18.0.3   80, 443   10h
+urumi-app           ingress.networking.k8s.io/urumi-login         traefik   app.34-67-189-86.sslip.io           172.18.0.3   80, 443   10h
+urumi-app           ingress.networking.k8s.io/urumi-mcp           traefik   app.34-67-189-86.sslip.io           172.18.0.3   80, 443   10h
+urumi-app           ingress.networking.k8s.io/urumi-oauth         traefik   app.34-67-189-86.sslip.io           172.18.0.3   80, 443   8h
+urumi-store         ingress.networking.k8s.io/urumi-store         traefik   shop.34-67-189-86.sslip.io          172.18.0.3   80, 443   2d11h
+
+NAMESPACE           NAME                                                           POD-SELECTOR                                                                                         AGE
+store-north         networkpolicy.networking.k8s.io/north-default-deny             <none>                                                                                               8h
+store-north         networkpolicy.networking.k8s.io/north-mariadb-in               app.kubernetes.io/component=mariadb,app.kubernetes.io/instance=north                                 8h
+store-north         networkpolicy.networking.k8s.io/north-woo-mcp                  app.kubernetes.io/component=woo-mcp,app.kubernetes.io/instance=north                                 8h
+store-north         networkpolicy.networking.k8s.io/north-wordpress-in             app.kubernetes.io/component=wordpress,app.kubernetes.io/instance=north                               8h
+store-north         networkpolicy.networking.k8s.io/north-wordpress-out            app.kubernetes.io/component in (store-setup,wordpress),app.kubernetes.io/instance in (north)         8h
+store-south         networkpolicy.networking.k8s.io/south-default-deny             <none>                                                                                               8h
+store-south         networkpolicy.networking.k8s.io/south-mariadb-in               app.kubernetes.io/component=mariadb,app.kubernetes.io/instance=south                                 8h
+store-south         networkpolicy.networking.k8s.io/south-woo-mcp                  app.kubernetes.io/component=woo-mcp,app.kubernetes.io/instance=south                                 8h
+store-south         networkpolicy.networking.k8s.io/south-wordpress-in             app.kubernetes.io/component=wordpress,app.kubernetes.io/instance=south                               8h
+store-south         networkpolicy.networking.k8s.io/south-wordpress-out            app.kubernetes.io/component in (store-setup,wordpress),app.kubernetes.io/instance in (south)         8h
+store-west-sports   networkpolicy.networking.k8s.io/west-sports-default-deny       <none>                                                                                               8h
+store-west-sports   networkpolicy.networking.k8s.io/west-sports-mariadb-in         app.kubernetes.io/component=mariadb,app.kubernetes.io/instance=west-sports                           8h
+store-west-sports   networkpolicy.networking.k8s.io/west-sports-woo-mcp            app.kubernetes.io/component=woo-mcp,app.kubernetes.io/instance=west-sports                           8h
+store-west-sports   networkpolicy.networking.k8s.io/west-sports-wordpress-in       app.kubernetes.io/component=wordpress,app.kubernetes.io/instance=west-sports                         8h
+store-west-sports   networkpolicy.networking.k8s.io/west-sports-wordpress-out      app.kubernetes.io/component in (store-setup,wordpress),app.kubernetes.io/instance in (west-sports)   8h
+urumi-app           networkpolicy.networking.k8s.io/urumi-acme-solver              acme.cert-manager.io/http01-solver=true                                                              10h
+urumi-app           networkpolicy.networking.k8s.io/urumi-chat                     app.kubernetes.io/component=chat                                                                     15h
+urumi-app           networkpolicy.networking.k8s.io/urumi-default-deny             <none>                                                                                               15h
+urumi-app           networkpolicy.networking.k8s.io/urumi-from-ingress             app.kubernetes.io/component in (chat,dashboard,gateway)                                              15h
+urumi-app           networkpolicy.networking.k8s.io/urumi-gateway                  app.kubernetes.io/component=gateway                                                                  15h
+urumi-app           networkpolicy.networking.k8s.io/urumi-provisioner              app.kubernetes.io/component=provisioner                                                              9h
+urumi-app           networkpolicy.networking.k8s.io/urumi-slack-mcp-to-slack       app.kubernetes.io/component=slack-mcp                                                                14h
+urumi-app           networkpolicy.networking.k8s.io/urumi-upstreams-from-gateway   app.kubernetes.io/component in (shipping,slack-mcp,supplier,woo-mcp)                                 15h
+urumi-app           networkpolicy.networking.k8s.io/urumi-woo-mcp-to-store         app.kubernetes.io/component=woo-mcp                                                                  15h
+
+NAMESPACE           NAME                              REQUEST                                                                                                                  LIMIT                                            AGE
+store-north         resourcequota/north-quota         persistentvolumeclaims: 2/2, pods: 3/6, requests.cpu: 125m/1, requests.memory: 544Mi/1536Mi, requests.storage: 4Gi/6Gi   limits.cpu: 2300m/4, limits.memory: 1792Mi/3Gi   8h
+store-south         resourcequota/south-quota         persistentvolumeclaims: 2/2, pods: 3/6, requests.cpu: 125m/1, requests.memory: 544Mi/1536Mi, requests.storage: 4Gi/6Gi   limits.cpu: 2300m/4, limits.memory: 1792Mi/3Gi   8h
+store-west-sports   resourcequota/west-sports-quota   persistentvolumeclaims: 2/2, pods: 3/6, requests.cpu: 125m/1, requests.memory: 544Mi/1536Mi, requests.storage: 4Gi/6Gi   limits.cpu: 2300m/4, limits.memory: 1792Mi/3Gi   8h
+
+NAMESPACE           NAME                            CREATED AT
+store-north         limitrange/north-limits         2026-10-26T01:50:08Z
+store-south         limitrange/south-limits         2026-10-26T01:49:57Z
+store-west-sports   limitrange/west-sports-limits   2026-10-26T02:32:20Z

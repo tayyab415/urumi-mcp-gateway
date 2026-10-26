@@ -1,0 +1,6 @@
+UTC 2026-10-26T10:49:53.064751+00:00
+cwd /home/tayyabkhan/urumi-learning/services/chat-agent
+command uv run pytest -q -p no:cacheprovider
+exit 0
+.................s.........                                              [100%]
+26 passed, 1 skipped in 19.45s
