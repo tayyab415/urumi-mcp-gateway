@@ -4,7 +4,7 @@
 .bubble { max-width: 70%; padding: 10px 16px; border-radius: 20px 20px 6px 20px; background: var(--surface-muted); color: var(--foreground); line-height: 1.5; white-space: pre-wrap; }
 .compact .bubble { max-width: 85%; font-size: 13px; padding: 8px 12px; }
 .thinking { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); padding: 4px 4px; }
-.reply { padding: 4px 4px 0; color: var(--foreground); line-height: 1.55; max-width: 48rem; display: grid; gap: 10px; }
+.reply { padding: 4px 4px 0; color: var(--foreground); line-height: 1.55; max-width: 48rem; min-width: 0; }
 .compact .reply { font-size: 13px; }
 .error { color: var(--danger); padding: 4px; }
 .cardReply { padding-top: 8px; }

@@ -1,0 +1,23 @@
+.markdown { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.07em; font-weight: 500; line-height: 1.4; margin-top: 4px; }
+.markdown strong { font-weight: 500; color: var(--foreground); }
+.markdown a { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-strong); }
+.markdown a:hover { text-decoration-color: currentColor; }
+.markdown ul, .markdown ol { padding-left: 22px; display: grid; gap: 4px; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li > ul, .markdown li > ol { margin-top: 4px; }
+.markdown li:has(> input[type="checkbox"]) { list-style: none; margin-left: -22px; }
+.markdown li > input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; }
+.markdown blockquote { margin: 0; padding-left: 12px; border-left: 2px solid var(--border-strong); color: var(--text-secondary); }
+.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+.markdown :not(pre) > code { font-size: 0.92em; padding: 1px 5px; border-radius: 6px; background: var(--surface-muted); color: var(--text-secondary); }
+.markdown pre { border: 1px solid var(--border); border-radius: 14px; background: var(--background); padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; color: var(--text-secondary); }
+
+/* Tables scroll sideways inside the reply instead of widening the panel. */
+.tableWrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.tableWrap table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.95em; line-height: 1.4; }
+.tableWrap th { text-align: left; font-weight: 400; font-size: 0.92em; color: var(--text-muted); white-space: nowrap; background: color-mix(in oklab, var(--surface-muted) 50%, transparent); }
+.tableWrap th, .tableWrap td { padding: 6px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tableWrap tbody tr:last-child td { border-bottom: 0; }
+.tableWrap tbody tr:hover { background: color-mix(in oklab, var(--surface-muted) 40%, transparent); }
