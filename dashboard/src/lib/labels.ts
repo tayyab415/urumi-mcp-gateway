@@ -82,7 +82,7 @@ export function liveParts(w: ToolWords): { verb: string; argument: string } {
   if (w.changesData && (w.kind === "edit" || w.kind === "create")) {
     return { verb: w.kind === "create" ? "Preparing" : "Preparing a change to", argument: w.argument || (w.kind === "create" ? `a new ${w.noun}` : w.noun) };
   }
-  if (w.kind === "truck") return { verb: "Getting shipping quotes for", argument: w.argument || w.noun };
+  if (w.kind === "truck") return w.argument && w.argument !== w.noun ? { verb: "Getting shipping quotes for", argument: w.argument } : { verb: "Getting", argument: "shipping quotes" };
   return { verb: w.verb, argument: w.argument || w.noun };
 }
 
@@ -90,7 +90,10 @@ export function liveParts(w: ToolWords): { verb: string; argument: string } {
 export function doneLabel(w: ToolWords, output?: string | null, isError?: boolean): string {
   if (isError) return `${w.past} ${w.argument || w.noun}`.replace(/^Called/, "Failed");
   const count = countIn(output);
-  if (w.kind === "truck") return count !== null ? `Got ${count} shipping ${count === 1 ? "quote" : "quotes"} for ${w.argument || w.noun}` : `Got shipping quotes for ${w.argument || w.noun}`;
+  if (w.kind === "truck") {
+    const what = w.argument && w.argument !== w.noun ? ` for ${w.argument}` : "";
+    return count !== null ? `Got ${count} shipping ${count === 1 ? "quote" : "quotes"}${what}` : `Got shipping quotes${what}`;
+  }
   if (w.kind === "search" && count !== null) return `Found ${count} ${count === 1 ? singularOf(w.noun) : w.noun}${w.argument && !w.argument.startsWith(w.noun) ? ` (${w.argument})` : ""}`;
   return `${w.past} ${w.argument || w.noun}`;
 }
@@ -130,6 +133,7 @@ export function auditLabel(publicName: string, argumentsJson: string, outcome: s
   if (outcome === "denied") return "Refused: role not allowed";
   if (outcome === "disabled") return "Refused: server disabled";
   if (outcome === "unknown_tool") return "Refused: unknown tool";
+  if (outcome === "pending_review") return "Refused: held for review (definition changed)";
   if (outcome === "unreachable") return `${titleCase(w.server)} unreachable`;
   if (outcome === "timeout") return error && error.includes("OUTCOME UNKNOWN") ? "Timed out. Check before retrying" : `${titleCase(w.server)} timed out`;
   if (outcome === "auth_failed") return `${titleCase(w.server)} rejected the stored credential`;
@@ -149,6 +153,7 @@ export function outcomeTone(outcome: string, error: string | null): { label: str
     case "denied":
     case "disabled":
     case "unknown_tool":
+    case "pending_review":
       return { label: "Refused", tone: "danger" };
     case "timeout":
       return error && error.includes("OUTCOME UNKNOWN") ? { label: "Outcome unknown", tone: "warning" } : { label: "Timed out", tone: "danger" };

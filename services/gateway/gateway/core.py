@@ -318,7 +318,7 @@ class Gateway:
         if pending_review(tool):
             return finish("pending_review", _error(
                 f"{name} is held back: the {server.name} server changed what this tool says it does, or added it, "
-                "after an admin last reviewed it. An admin can review and approve it on the Servers page."), "definition not approved")
+                "after an admin last reviewed it. An admin can review and approve it on the Permissions page."), "definition not approved")
         if who.role not in tool.allowed_roles:
             return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
 
