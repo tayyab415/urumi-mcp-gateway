@@ -212,11 +212,20 @@ gateway audit row.
 
 1. Turn on k3s Secret encryption at rest, or move credentials to an external
    secret manager.
-2. Notify admins when pinning holds a tool (today it shows on the
+2. Put the first store (namespace `urumi-store`) behind the same default-deny
+   NetworkPolicies, ResourceQuota and LimitRange that provisioned stores get.
+   The store chart already has them (`networkPolicy.enabled`,
+   `guardrails.enabled`); turning them on for the first store also needs a rule
+   letting `urumi-app`'s woo-mcp reach its WordPress. Today the app Pods and
+   provisioned stores are kept out by their own egress policies, but a Pod in a
+   namespace without one (for example `cert-manager`) could still connect to
+   the first store's database.
+3. Notify admins when pinning holds a tool (today it shows on the
    Permissions page only).
-3. Add an expiry to API keys.
-4. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
-5. Use a load balancer that keeps client addresses, so the login limit is per
+4. Add an expiry to API keys.
+5. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
+6. Use a load balancer that keeps client addresses, so the login limit is per
    client.
-6. Try browser sign-in with a real Claude Code and a real Cursor, then decide
-   whether a short grace period for refresh tokens is worth its cost.
+7. Try browser sign-in with a real Cursor (Claude Code was tried and works),
+   then decide whether a short grace period for refresh tokens is worth its
+   cost.
