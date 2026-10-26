@@ -56,6 +56,12 @@ class Settings:
     # address, which may be a proxy's (infra/cloud-run).
     store_public_url: str | None = None
     store_domain: str | None = None
+    # The per-credential limit on /mcp (ratelimit.py): up to `burst` requests at once,
+    # then `average` per `period` ("1s", "1m"). The chart sets the Ingress's numbers.
+    # An average of 0 turns it off.
+    mcp_rate_average: float = 10
+    mcp_rate_period: str = "1s"
+    mcp_rate_burst: int = 50
 
     def mcp_allowed_hosts(self) -> list[str]:
         if "*" in self.extra_allowed_hosts:
@@ -90,4 +96,7 @@ class Settings:
             demo_login=_bool("DEMO_LOGIN", False),
             store_public_url=os.environ.get("STORE_PUBLIC_URL") or None,
             store_domain=os.environ.get("STORE_DOMAIN") or None,
+            mcp_rate_average=float(os.environ.get("MCP_RATE_LIMIT_AVERAGE", "10")),
+            mcp_rate_period=os.environ.get("MCP_RATE_LIMIT_PERIOD", "1s"),
+            mcp_rate_burst=int(os.environ.get("MCP_RATE_LIMIT_BURST", "50")),
         )

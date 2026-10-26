@@ -61,7 +61,12 @@ gateway lists its tools at once, so they appear within seconds of Ready.
 registration in the same request, so its tools disappear from every client
 before anything else happens. The provisioner then runs `helm uninstall` and
 deletes the namespace, which takes the volumes, the Secret and Helm's own
-record with it.
+record with it. Deleting is one way, even for a store that is still being
+provisioned: the request is its own annotation (`urumi.io/delete-requested`),
+which only Delete sets and nothing clears, and it outranks the phase. A
+reconcile pass that was busy in Helm when the delete came re-reads the
+namespace before it writes, and does not record "Ready"; the next pass deletes
+the store.
 
 **Isolation, shown with NetworkPolicies.** Each store namespace starts with
 deny-all, in and out. Then: Traefik and this store's MCP server may reach
@@ -86,7 +91,11 @@ labels and annotations on its namespace (owner, phase, reason, deadline), and
 everything else is read from the cluster on each pass. So:
 - Creating is safe to retry: `PUT /stores/north` for a store that exists
   returns it; for a Failed one it starts again with the same Secret and a new
-  deadline.
+  deadline. Starting again means running setup again: a setup Job that ran
+  out of attempts (say, the WooCommerce download failed) never runs again by
+  itself, and Helm sees nothing to change in a deployed release. So the
+  provisioner deletes the failed Job and runs `helm upgrade --install` once
+  more, which makes a fresh Job; the database and WordPress volumes stay.
 - A provisioner restarted mid-way lists the store namespaces and carries on.
   If Helm was killed during an install, the release is left "pending"; only
   this one process runs Helm, so a pending release means a crash, and it is
@@ -124,6 +133,16 @@ in three layers (`charts/urumi-app/templates/provisioner.yaml`):
    read the gateway's Secret. `verify-multistore.sh` tries exactly that and
    shows it refused.
 
+   The same policy keeps each store's Pod Security fence, which namespace
+   rights would otherwise let the provisioner lift. A namespace it creates must
+   be named `store-*` and enforce `baseline` or `restricted` (it sets
+   `baseline`, because WordPress's Apache starts as root). An update may not
+   lower that level, remove it, or pin an older Pod Security version. And the
+   Pods and Pod templates it writes (Deployments, StatefulSets, Jobs) may not
+   share the host's process, IPC or network namespace, run privileged
+   containers or mount `hostPath` volumes. These are checked on the
+   workload itself, before any Pod exists.
+
 ## Choices and what they cost
 
 - **Helm inside the provisioner, not a Kubernetes operator.** The same chart
@@ -157,6 +176,15 @@ in three layers (`charts/urumi-app/templates/provisioner.yaml`):
   each store has its own database.
 - `scripts/verify-multistore.sh north south`: 17 of 17 checks passed
   (`docs/evidence/02-verify-multistore.txt`).
-- Unit and API tests: `services/provisioner` (13), `services/gateway`
+- The admission policy's Pod Security and workload rules were checked off the
+  VM: server-side dry runs as the provisioner's ServiceAccount against a local
+  API server of the VM's Kubernetes version (1.36.5). Relabelling a store
+  `privileged`, removing its level, creating a store namespace without one,
+  and Deployments, StatefulSets and Jobs with host access were all refused;
+  the provisioner's own calls and a Helm install of the store chart passed.
+  The same Helm version (4.3.1) also confirmed that a deleted setup Job comes
+  back, fresh, on the next `helm upgrade --install`.
+- Unit and API tests: `services/provisioner` (18, including a retry after a
+  failed setup Job and a delete that arrives mid-install), `services/gateway`
   `tests/test_stores.py` (create, retry, limit, registration, owner-only
   tools, delete removes tools).

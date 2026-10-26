@@ -77,6 +77,16 @@ TOOLS = [
         input_schema=_schema({"seconds": {"type": "number"}}, ["seconds"]),
         annotations=READ_ONLY,
     ),
+    # A provisioned store's tool, as the real gateway lists it: the server name has a
+    # colon of its own, and the gateway names the server in _meta as well.
+    types.Tool(
+        name="store-north__create_product",
+        title="Store: North: Create product",
+        description="Create a simple product in the North store.",
+        input_schema=_schema({"name": {"type": "string"}, "regular_price": {"type": "string"}}, ["name", "regular_price"]),
+        annotations=WRITES,
+        meta={"urumi.io/server": {"slug": "store-north", "name": "Store: North"}},
+    ),
 ]
 
 
@@ -132,8 +142,10 @@ class FakeGateway:
         row = {"user": user, "tool": params.name, "arguments": args}
         self.audit.append(row)
         if not any(t.name == params.name for t in TOOLS) or not self._enabled(params.name):
+            # The real gateway's answer for a tool the caller cannot use: a JSON-RPC
+            # error, the same for a tool that does not exist and one that is not theirs.
             row["outcome"] = "rejected"
-            raise MCPError(code=-32602, message=f"Unknown or disabled tool: {params.name}")
+            raise MCPError(code=-32602, message=f"Unknown tool: {params.name}")
         result = await self._run(params.name, args)
         row["outcome"] = "error" if result.get("error") else "ok"
         return types.CallToolResult(
@@ -146,7 +158,7 @@ class FakeGateway:
         if name == "woo__list_products":
             term = str(args.get("search", "")).lower()
             return {"products": [p for p in self.products if term in p["name"].lower()]}
-        if name == "woo__create_product":
+        if name in ("woo__create_product", "store-north__create_product"):
             product = {"id": 10 + len(self.products) + 1, "name": args["name"], "regular_price": args["regular_price"]}
             self.products.append(product)
             return {"created": product}

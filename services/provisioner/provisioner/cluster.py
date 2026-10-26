@@ -95,7 +95,8 @@ def create_namespace(slug: str, labels: dict[str, str], annotations: dict[str, s
     return _core().create_namespace(body)
 
 
-def annotate(name: str, annotations: dict[str, str]) -> None:
+def annotate(name: str, annotations: dict[str, str | None]) -> None:
+    """Set annotations on a namespace. A value of None removes that annotation."""
     _core().patch_namespace(name, {"metadata": {"annotations": annotations}})
 
 
@@ -229,6 +230,28 @@ def observe(namespace: str, release: str) -> state.Observed:
         detail = extra or problems.get(label)
         seen.waiting.append(f"{label} ({detail})" if detail else label)
     return seen
+
+
+def delete_failed_setup_job(namespace: str, release: str) -> bool:
+    """Remove the store's setup Job if it failed, so the next Helm install makes a fresh one.
+
+    A Job that ran out of attempts never runs again, and Helm sees nothing to
+    change in it. A Job that is still running, or that succeeded, is left alone.
+    True if a failed Job was removed.
+    """
+    batch = client.BatchV1Api()
+    name = f"{release}-store-setup"
+    try:
+        job = batch.read_namespaced_job(name, namespace)
+    except ApiException as exc:
+        if _missing(exc):
+            return False
+        raise
+    if not any(c.type == "Failed" and c.status == "True" for c in (job.status.conditions or [])):
+        return False
+    # "Background": the Job goes at once, so Helm can create its replacement; its Pods follow.
+    batch.delete_namespaced_job(name, namespace, propagation_policy="Background")
+    return True
 
 
 # ----------------------------------------------------------------------- Helm

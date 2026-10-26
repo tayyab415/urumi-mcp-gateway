@@ -117,6 +117,23 @@ async def test_disabled_tool_called_anyway_is_refused_not_run(gateway):
     assert gateway.fake.audit == []
 
 
+async def test_tool_the_gateway_refuses_as_unknown_goes_back_to_the_model(gateway):
+    # The tool was in this turn's list, so chat sends the call, but it is gone by then.
+    # The gateway answers with a JSON-RPC error (-32602, "Unknown tool"), not a tool
+    # result; the model hears that the call did not run, and the turn carries on.
+    agent, model = make(gateway, [[call("s", "stock__get_stock", product_name="Shin Guards")], [say("Can't check.")]])
+    agent._connect = _disable_after_connect(agent._connect, gateway, "stock")
+    events = await run(agent, [], "stock?")
+
+    result = next(e for e in events if e["type"] == "tool_result")
+    assert result["is_error"]
+    assert result["output"] == "The gateway rejected the call: Unknown tool: stock__get_stock. It did not run."
+    assert events[-1]["type"] == "done"
+    [output] = outputs(model.requests[1])
+    assert "did not run" in str(output["output"])
+    assert gateway.fake.audit == [{"user": "user-a", "tool": "stock__get_stock", "arguments": {"product_name": "Shin Guards"}, "outcome": "rejected"}]
+
+
 async def test_made_up_tool_name_goes_back_to_the_model(gateway):
     agent, model = make(gateway, [[call("u", "woo__delete_everything")], [say("I can't do that.")]])
     events = await run(agent, [], "delete everything")
@@ -168,6 +185,18 @@ def _revoke_after_connect(connect, gateway):
     return wrapped
 
 
+def _disable_after_connect(connect, gateway, prefix: str):
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def wrapped(url, credential, timeout, *rest):
+        async with connect(url, credential, timeout, *rest) as server:  # this lists the tools
+            gateway.fake.disabled.add(prefix)
+            yield server
+
+    return wrapped
+
+
 # ----------------------------------------------------------------- approvals
 
 
@@ -204,6 +233,31 @@ async def test_write_tool_waits_for_approval_before_the_gateway_sees_it(gateway)
     assert [e["type"] for e in events] == ["tools", "tool_call", "approval_required", "approval_decided", "tool_result", "text", "done"]
     assert events[1] == {"type": "tool_call", "id": "w", "name": "woo__create_product", "input": {"name": "Ball", "regular_price": "9.00"}}
     assert gateway.fake.audit[0]["tool"] == "woo__create_product" and gateway.fake.audit[0]["outcome"] == "ok"
+
+
+async def test_approval_names_the_whole_store(gateway):
+    # "Store: North" has a colon of its own; the card must not shorten it to "Store".
+    agent, registry = make_gated(gateway, [[call("w", "store-north__create_product", name="Ball", regular_price="9.00")], [say("Created.")]])
+    task, events = await run_gated(agent, "create a ball in North")
+    pending = await pending_request(registry)
+    asked = next(e for e in events if e["type"] == "approval_required")
+    assert asked["server"] == "store-north" and asked["server_name"] == "Store: North"
+    assert asked["summary"] == "Run store-north__create_product on Store: North"
+    registry.decide(pending.request_id, "conv-1", "owner-a", "deny")
+    await task
+
+
+def test_server_name_comes_from_meta_and_otherwise_keeps_the_store_prefix():
+    import mcp_types as types
+
+    from chat_agent.gateway import _server_name
+
+    tagged = types.Tool(name="store-north__x", title="Orders: list them", input_schema={"type": "object"},
+                        meta={"urumi.io/server": {"slug": "store-north", "name": "Store: North"}})
+    assert _server_name(tagged.name, tagged) == "Store: North"  # the data wins over the title
+    untagged = types.Tool(name="store-north__create_product", title="Store: North: Create product", input_schema={"type": "object"})
+    assert _server_name(untagged.name, untagged) == "Store: North"
+    assert _server_name("woo__list_orders", None) == "woo"
 
 
 async def test_denied_call_goes_back_to_the_model_as_not_run(gateway):

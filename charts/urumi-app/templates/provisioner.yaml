@@ -91,6 +91,13 @@ rules:
 # as stores, and may not put that label on a namespace that lacks it. Without
 # this, "create rolebindings" anywhere would let it grant itself the tenant
 # role in this app namespace and read the gateway's Secret.
+#
+# It also keeps the Pod Security fence around each store. A store namespace
+# must start out enforcing "baseline" or "restricted", and an update may not
+# remove or weaken that. Without this, the provisioner could relabel a store
+# namespace "privileged" and then run a container with the host's processes
+# and disk. Workloads it writes are checked too, before any Pod exists: no
+# host namespaces, no privileged containers, no hostPath volumes.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -115,6 +122,30 @@ spec:
         request.resource.resource == 'namespaces'
           ? (request.operation == 'DELETE' ? oldObject : object)
           : namespaceObject
+    # How strict a namespace's Pod Security "enforce" label is: restricted 2,
+    # baseline 1, anything else 0. No label means the cluster default, which
+    # on k3s allows everything, so it counts as 0 as well.
+    - name: newLevel
+      expression: >-
+        request.resource.resource != 'namespaces' || request.operation == 'DELETE' ? 0 :
+        !has(object.metadata.labels) || !('pod-security.kubernetes.io/enforce' in object.metadata.labels) ? 0 :
+        object.metadata.labels['pod-security.kubernetes.io/enforce'] == 'restricted' ? 2 :
+        object.metadata.labels['pod-security.kubernetes.io/enforce'] == 'baseline' ? 1 : 0
+    - name: oldLevel
+      expression: >-
+        request.resource.resource != 'namespaces' || request.operation != 'UPDATE' ? 0 :
+        !has(oldObject.metadata.labels) || !('pod-security.kubernetes.io/enforce' in oldObject.metadata.labels) ? 0 :
+        oldObject.metadata.labels['pod-security.kubernetes.io/enforce'] == 'restricted' ? 2 :
+        oldObject.metadata.labels['pod-security.kubernetes.io/enforce'] == 'baseline' ? 1 : 0
+    # A Pod, or a workload with a Pod template (Deployment, StatefulSet, Job...).
+    - name: hasPodSpec
+      expression: >-
+        request.operation != 'DELETE' && has(object.spec) && (
+          request.resource.resource == 'pods' ||
+          (request.resource.group in ['apps', 'batch'] && has(object.spec.template) && has(object.spec.template.spec)))
+    - name: podSpec
+      expression: >-
+        request.resource.resource == 'pods' ? object.spec : object.spec.template.spec
   validations:
     - expression: >-
         variables.target != null && has(variables.target.metadata.labels) &&
@@ -126,6 +157,37 @@ spec:
         (has(oldObject.metadata.labels) && 'urumi.io/store' in oldObject.metadata.labels &&
          oldObject.metadata.labels['urumi.io/store'] == 'true')
       message: The store provisioner may not turn an existing namespace into a store namespace.
+    - expression: >-
+        !(request.resource.resource == 'namespaces' && request.operation == 'CREATE') ||
+        (has(object.metadata.name) && object.metadata.name.startsWith('store-'))
+      message: The store provisioner may only create namespaces named store-<name>.
+    - expression: >-
+        !(request.resource.resource == 'namespaces' && request.operation == 'CREATE') ||
+        variables.newLevel >= 1
+      message: A new store namespace must enforce the "baseline" or "restricted" Pod Security standard.
+    - expression: >-
+        !(request.resource.resource == 'namespaces' && request.operation == 'UPDATE') ||
+        variables.newLevel >= variables.oldLevel
+      message: The store provisioner may not remove or weaken a store namespace's Pod Security level.
+    - expression: >-
+        request.resource.resource != 'namespaces' || request.operation == 'DELETE' ||
+        !has(object.metadata.labels) ||
+        !('pod-security.kubernetes.io/enforce-version' in object.metadata.labels) ||
+        object.metadata.labels['pod-security.kubernetes.io/enforce-version'] == 'latest'
+      message: A store namespace's Pod Security version must be "latest" (or unset, which means the same).
+    - expression: >-
+        !variables.hasPodSpec || (
+          !(has(variables.podSpec.hostPID) && variables.podSpec.hostPID) &&
+          !(has(variables.podSpec.hostIPC) && variables.podSpec.hostIPC) &&
+          !(has(variables.podSpec.hostNetwork) && variables.podSpec.hostNetwork) &&
+          (!has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v, !has(v.hostPath))) &&
+          (!has(variables.podSpec.containers) || variables.podSpec.containers.all(c,
+            !has(c.securityContext) || !has(c.securityContext.privileged) || !c.securityContext.privileged)) &&
+          (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c,
+            !has(c.securityContext) || !has(c.securityContext.privileged) || !c.securityContext.privileged)))
+      message: >-
+        The store provisioner may not write workloads that share the host's process,
+        IPC or network namespace, run privileged containers, or mount hostPath volumes.
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

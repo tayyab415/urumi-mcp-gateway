@@ -119,7 +119,8 @@ class GatewayServer(MCPServerStreamableHttp):
         if self.gate is not None and not await self._is_read_only(tool_name):
             tool = await self._tool(tool_name)
             verdict = await self.gate.ask(
-                call_id=call_id, name=tool_name, arguments=arguments, summary=_summary(tool_name, tool), server=_server_slug(tool_name)
+                call_id=call_id, name=tool_name, arguments=arguments, summary=_summary(tool_name, tool),
+                server=_server_slug(tool_name), server_name=_server_name(tool_name, tool),
             )
             self._verdicts[call_id] = {"waited_ms": verdict.waited_ms}
             if not verdict.approved:
@@ -152,9 +153,9 @@ class GatewayServer(MCPServerStreamableHttp):
         if self.auth.rejected:
             return "The gateway no longer accepts this user's credential. The call did not run."
         if isinstance(cause, MCPError):
-            # Any other protocol error is the gateway refusing the call: unknown
-            # tool, disabled server, not allowed for this user. It did not run.
-            return f"The gateway rejected the call: {cause.message}"
+            # Any other protocol error is the gateway refusing the call, such as a
+            # tool this user cannot use ("Unknown tool: ..."). It did not run.
+            return f"The gateway rejected the call: {cause.message}. It did not run."
         return _UNKNOWN_OUTCOME.format(reason=f"Lost the connection to the gateway ({type(cause).__name__})")
 
 
@@ -174,12 +175,26 @@ def _server_slug(public_name: str) -> str:
     return public_name.split("__", 1)[0]
 
 
-def _summary(public_name: str, tool: types.Tool | None) -> str:
-    """"Run woo__update_order_status on WooCommerce". The gateway titles tools "<Server name>: <tool title>"."""
-    server = _server_slug(public_name)
+# The gateway names each tool's server in the tool's _meta, as {"slug": ..., "name": ...}.
+SERVER_META = "urumi.io/server"
+
+
+def _server_name(public_name: str, tool: types.Tool | None) -> str:
+    """The display name of the server a tool belongs to, e.g. "WooCommerce" or "Store: North"."""
+    server = ((tool.meta or {}) if tool else {}).get(SERVER_META)
+    if isinstance(server, dict) and isinstance(server.get("name"), str) and server["name"]:
+        return server["name"]
+    # A gateway without _meta: its titles are "<Server name>: <tool title>". A store's
+    # server name has a colon of its own ("Store: North"), so the tool title is the
+    # part after the last one.
     if tool and tool.title and ": " in tool.title:
-        server = tool.title.split(": ", 1)[0]
-    return f"Run {public_name} on {server}"
+        return tool.title.rsplit(": ", 1)[0]
+    return _server_slug(public_name)
+
+
+def _summary(public_name: str, tool: types.Tool | None) -> str:
+    """"Run woo__update_order_status on WooCommerce"."""
+    return f"Run {public_name} on {_server_name(public_name, tool)}"
 
 
 @asynccontextmanager

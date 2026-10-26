@@ -749,7 +749,8 @@ def build_router(settings: Settings) -> APIRouter:
         if outcome:
             q = q.where(AuditEvent.outcome == outcome)
         if via:
-            q = q.where(AuditEvent.via == via)
+            # Search mode (/mcp/search) is the same door, so "mcp" also covers "mcp-search".
+            q = q.where(AuditEvent.via.in_((via, f"{via}-search")))
         if chat_id:
             q = q.where(AuditEvent.chat_id == chat_id)
         if before_id:
@@ -797,6 +798,9 @@ def build_router(settings: Settings) -> APIRouter:
         by_tool: dict[str, list[AuditEvent]] = {}
         by_hour: dict[datetime, list[AuditEvent]] = {}
         for e in rows:
+            # A call still running has no outcome or duration yet; it counts once it ends.
+            if e.outcome == "pending":
+                continue
             by_server.setdefault(e.server_slug or "?", []).append(e)
             by_tool.setdefault(e.public_name, []).append(e)
             by_hour.setdefault(e.started_at.replace(minute=0, second=0, microsecond=0), []).append(e)

@@ -14,6 +14,12 @@ in a normal tools/list, and gateway__call_tool goes through the same
 Gateway.call_tool as a direct call: the same role check, disabled-server
 check, pinning check, timeout and audit row, under the real tool's name.
 
+Every tools/call here writes one audit row, marked `via = mcp-search` (or
+`chat-search`). A search is a row of its own. A gateway__call_tool request is
+one row under the tool it called, so the wrapper and the call it made are one
+event, counted once. A wrapper refused before any tool is chosen (no name,
+itself as the target) gets a row under gateway__call_tool.
+
 Ranking is BM25 over the tool's name, title, description and server name. The
 corpus is small (one person's visible tools), so it is rebuilt per search from
 the stored catalog; no index to keep in sync with discovery.
@@ -30,7 +36,7 @@ from typing import Any
 
 import mcp_types as types
 
-from gateway.core import Gateway, Identity, clean_description, public_name
+from gateway.core import Finish, Gateway, Identity, UnknownTool, clean_description, public_name
 
 SEARCH = "gateway__search_tools"
 CALL = "gateway__call_tool"
@@ -116,46 +122,68 @@ async def meta_tools(gateway: Gateway, who: Identity) -> list[types.Tool]:
     ]
 
 
+def _through_search(who: Identity) -> Identity:
+    return replace(who, via=f"{who.via}-search")  # type: ignore[arg-type]
+
+
 async def search(gateway: Gateway, who: Identity, arguments: dict[str, Any]) -> types.CallToolResult:
-    query = str(arguments.get("query") or "").strip()
-    try:
-        limit = max(1, min(MAX_LIMIT, int(arguments.get("limit") or DEFAULT_LIMIT)))
-    except (TypeError, ValueError):
-        limit = DEFAULT_LIMIT
-    if not query:
-        return _error("Give a query: a few words about what you want to do.")
-    visible = {public_name(server.slug, tool.name): (server, tool) for server, tool in await gateway.visible_tools(who)}
-    docs = [
-        (name, f"{name.replace('__', ' ').replace('_', ' ').replace('-', ' ')} {server.name} {tool.title or ''} {tool.description}")
-        for name, (server, tool) in visible.items()
-    ]
-    hits = []
-    for name, score in rank(query, docs, limit):
-        server, tool = visible[name]
-        hits.append({
-            "name": name,
-            "server": server.name,
-            "description": clean_description(tool.description),
-            "read_only": bool((tool.annotations or {}).get("readOnlyHint")),
-            "input_schema": tool.input_schema,
-            "score": round(score, 2),
-        })
-    payload = {"query": query, "matches": hits, "searched": len(visible)}
-    text = json.dumps(payload, ensure_ascii=False)
-    if not hits:
-        text = f"No tools match {query!r} among the {len(visible)} you can use. Try other words."
-    return types.CallToolResult(content=[types.TextContent(type="text", text=text)], structured_content=payload)
+    async def route(event: Any, finish: Finish) -> types.CallToolResult:
+        query = str(arguments.get("query") or "").strip()
+        try:
+            limit = max(1, min(MAX_LIMIT, int(arguments.get("limit") or DEFAULT_LIMIT)))
+        except (TypeError, ValueError):
+            limit = DEFAULT_LIMIT
+        if not query:
+            return finish("invalid_arguments", _error("Give a query: a few words about what you want to do."), "no query")
+        visible = {public_name(server.slug, tool.name): (server, tool) for server, tool in await gateway.visible_tools(who)}
+        docs = [
+            (name, f"{name.replace('__', ' ').replace('_', ' ').replace('-', ' ')} {server.name} {tool.title or ''} {tool.description}")
+            for name, (server, tool) in visible.items()
+        ]
+        hits = []
+        for name, score in rank(query, docs, limit):
+            server, tool = visible[name]
+            hits.append({
+                "name": name,
+                "server": server.name,
+                "description": clean_description(tool.description),
+                "read_only": bool((tool.annotations or {}).get("readOnlyHint")),
+                "input_schema": tool.input_schema,
+                "score": round(score, 2),
+            })
+        payload = {"query": query, "matches": hits, "searched": len(visible)}
+        text = json.dumps(payload, ensure_ascii=False)
+        if not hits:
+            text = f"No tools match {query!r} among the {len(visible)} you can use. Try other words."
+        return finish("ok", types.CallToolResult(content=[types.TextContent(type="text", text=text)], structured_content=payload))
+
+    return await gateway.audited(_through_search(who), SEARCH, arguments, route)
 
 
 async def call(gateway: Gateway, who: Identity, arguments: dict[str, Any]) -> types.CallToolResult:
     name = str(arguments.get("name") or "")
     inner = arguments.get("arguments") or {}
-    if name in META_TOOLS:
-        return _error(f"{CALL} calls upstream tools, not itself or {SEARCH}.")
-    if not isinstance(inner, dict):
-        return _error("'arguments' must be an object.")
-    # The audit row is written under the real tool's name, marked as reached through search.
-    return await gateway.call_tool(replace(who, via=f"{who.via}-search"), name, inner)  # type: ignore[arg-type]
+    problem = None
+    if not name:
+        problem = f"Give the tool's name, exactly as {SEARCH} returned it."
+    elif name in META_TOOLS:
+        problem = f"{CALL} calls upstream tools, not itself or {SEARCH}."
+    elif not isinstance(inner, dict):
+        problem = "'arguments' must be an object."
+    if problem is not None:
+        # Refused before any tool was chosen, so the row is the wrapper's own.
+        async def refuse(event: Any, finish: Finish) -> types.CallToolResult:
+            return finish("invalid_arguments", _error(problem), problem)
+
+        return await gateway.audited(_through_search(who), CALL, arguments, refuse)
+    # One row, under the real tool's name and marked as reached through search.
+    try:
+        return await gateway.call_tool(_through_search(who), name, inner)
+    except UnknownTool:
+        # Here the tool being called is gateway__call_tool, which exists; a name it cannot
+        # use is a bad argument, answered as a tool error so the model can search again.
+        # Unknown and not-yours read the same, as on a direct call.
+        return _error(f"Unknown tool: {name}. Use a name {SEARCH} returned.")
 
 
 def _error(message: str) -> types.CallToolResult:

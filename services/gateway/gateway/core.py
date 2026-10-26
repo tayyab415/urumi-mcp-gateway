@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Literal
@@ -27,7 +28,7 @@ from urllib.parse import quote
 
 import anyio
 import mcp_types as types
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from gateway import upstreams
@@ -40,6 +41,11 @@ SEPARATOR = "__"
 MAX_AUDIT_ARGS = 2000
 ROLES = ("admin", "member")
 IDENTITY_HEADER = "X-Urumi-User"
+SERVER_META = "urumi.io/server"  # key in each listed tool's _meta: {"slug": ..., "name": ...}
+# Audit outcomes for a call the upstream has been sent: "pending" while it runs,
+# "interrupted" if the gateway stopped before it ended (marked at the next start).
+PENDING = "pending"
+INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,25 @@ class Identity:
     name: str = ""
     # "search": tools/list returns the two search-mode tools (toolsearch.py) instead of every tool.
     tool_mode: Literal["all", "search"] = "all"
+
+
+# How a tools/call ends: `finish(outcome, result, error)` fills in the audit row and
+# returns the result. `route(event, finish)` is the work done under that row.
+Finish = Callable[..., types.CallToolResult | None]
+Route = Callable[[AuditEvent, Finish], Awaitable[types.CallToolResult | None]]
+
+
+class UnknownTool(Exception):
+    """The caller named a tool they cannot use: it does not exist, or it is not theirs.
+
+    Both get this one answer, so it never reveals which tools exist. The MCP
+    endpoint sends it as a JSON-RPC error, as the MCP spec does for unknown
+    tools. The audit row still records which case it was.
+    """
+
+    def __init__(self, name: str):
+        super().__init__(f"Unknown tool: {name}")
+        self.name = name
 
 
 def public_name(slug: str, tool: str) -> str:
@@ -109,7 +134,9 @@ def default_roles(annotations: types.ToolAnnotations | None) -> list[str]:
     return ["admin"]
 
 
-MAX_RESULT_CHARS = 256_000  # per call; a hostile or buggy upstream must not flood the model's context
+# Per call, measured over the whole result as JSON; a hostile or buggy upstream must
+# not flood the model's context (or the gateway's memory) with text, images or data.
+MAX_RESULT_CHARS = 256_000
 
 
 def may_use_server(server: Server, who: Identity) -> bool:
@@ -175,10 +202,12 @@ class Gateway:
                 server.last_error = failure_.message
             else:
                 assert found is not None
-                # Trust on first use: what a server offers when an admin first connects it
-                # (or what the platform's own store servers offer) counts as reviewed.
-                # Anything that changes or appears after that waits for an admin.
-                trust_new = server.last_ok_at is None or server.managed_by is not None
+                # Trust on first use: what a server offers the first time it answers counts
+                # as reviewed. That holds for the platform's own store servers too: a store's
+                # MCP server is new code the platform deployed, but a tool it adds later is
+                # no more trustworthy than one an admin-added server adds. Anything that
+                # changes or appears after the first discovery waits for an admin.
+                trust_new = server.last_ok_at is None
                 server.status, server.last_error, server.last_ok_at = "ok", None, now
                 server.latency_ms, server.protocol_version = found.latency_ms, found.protocol_version
                 self._merge_tools(server, found.tools, trust_new)
@@ -259,6 +288,9 @@ class Gateway:
                     input_schema=tool.input_schema,
                     output_schema=tool.output_schema,
                     annotations=annotations,
+                    # Which server, as data: a server name can itself contain ": " ("Store: North"),
+                    # so a client should not have to cut it out of the title.
+                    meta={SERVER_META: {"slug": server.slug, "name": server.name}},
                 )
             )
         return result
@@ -266,8 +298,23 @@ class Gateway:
     # ---------------------------------------------------------------- tool call
 
     async def call_tool(self, who: Identity, name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
-        """Authorize, route, time-limit and audit one tool call."""
+        """Authorize, route, time-limit and audit one tool call. Raises UnknownTool."""
         arguments = arguments or {}
+
+        async def route(event: AuditEvent, finish: Finish) -> types.CallToolResult | None:
+            return await self._route(who, name, arguments, event, finish)
+
+        return await self.audited(who, name, arguments, route)
+
+    async def audited(self, who: Identity, name: str, arguments: dict[str, Any], route: Route) -> types.CallToolResult:
+        """Run one tools/call under exactly one audit row, however it ends.
+
+        Every tools/call the gateway answers comes through here: upstream tools
+        (`call_tool`) and the gateway's own search-mode tools (toolsearch.py).
+        `route(event, finish)` does the work and returns `finish(outcome, result, error)`.
+        A result of None means "no such tool for this caller": the row is
+        written, then UnknownTool is raised.
+        """
         started = time.monotonic()
         event = AuditEvent(
             started_at=utcnow(),
@@ -279,29 +326,32 @@ class Gateway:
             public_name=name[:200],
             arguments=_truncate_json(arguments),
         )
+        if parts := split_name(name):
+            event.server_slug, event.tool_name = parts[0][:32], parts[1][:128]
 
-        def finish(outcome: str, result: types.CallToolResult, error: str | None = None) -> types.CallToolResult:
+        def finish(outcome: str, result: types.CallToolResult | None, error: str | None = None) -> types.CallToolResult | None:
             event.outcome = outcome
             event.error = error
             event.duration_ms = int((time.monotonic() - started) * 1000)
             return result
 
         try:
-            result = await self._route(who, name, arguments, event, finish)
+            result = await route(event, finish)
         finally:
-            if getattr(event, "outcome", None) is None:
-                # Cancelled (client went away) or crashed mid-call: record that too.
+            if getattr(event, "outcome", None) in (None, PENDING):
+                # Cancelled (client went away) or failed mid-call: record that too.
                 event.outcome, event.duration_ms = "aborted", int((time.monotonic() - started) * 1000)
             with anyio.CancelScope(shield=True):
                 await self._record(event)
+        if result is None:
+            raise UnknownTool(name)
         return result
 
-    async def _route(self, who, name, arguments, event, finish) -> types.CallToolResult:  # noqa: ANN001
+    async def _route(self, who: Identity, name: str, arguments: dict[str, Any], event: AuditEvent, finish: Finish) -> types.CallToolResult | None:
         parts = split_name(name)
         if parts is None:
-            return finish("unknown_tool", _error(f"Unknown tool {name!r}. Tool names look like 'server__tool'."), "malformed name")
+            return finish("unknown_tool", None, "malformed name")
         slug, tool_name = parts
-        event.server_slug, event.tool_name = slug[:32], tool_name[:128]
 
         # Fresh read on every call: a client holding an old tool list cannot use
         # a server that has since been disabled, or a tool it has lost access to.
@@ -312,15 +362,26 @@ class Gateway:
                 tool = await s.scalar(select(Tool).where(Tool.server_id == server.id, Tool.name == tool_name))
 
         if server is None or tool is None or not tool.present or not may_use_server(server, who):
-            return finish("unknown_tool", _error(f"Unknown tool {name!r}."), "not in catalog")
+            return finish("unknown_tool", None, "not in catalog")
+        # A tool this caller's role may not use gets the same answer as one that does not
+        # exist, so a refusal never tells anyone which tools exist. The row keeps the reason.
+        # It is checked before the disabled and held checks for the same reason.
+        if who.role not in tool.allowed_roles:
+            return finish("denied", None, "role not allowed")
         if not server.enabled:
             return finish("disabled", _error(f"The {server.name} server is disabled by an admin."), "server disabled")
         if pending_review(tool):
             return finish("pending_review", _error(
                 f"{name} is held back: the {server.name} server changed what this tool says it does, or added it, "
                 "after an admin last reviewed it. An admin can review and approve it on the Permissions page."), "definition not approved")
-        if who.role not in tool.allowed_roles:
-            return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
+
+        # The row is written before the request goes out, and completed when it returns.
+        # If the gateway dies in between, the row stays "pending" and the next start marks
+        # it interrupted, so a write that happened never goes unrecorded. No row, no call.
+        if not await self._record_pending(event):
+            return finish("audit_failed", _error(
+                "The gateway could not record this call in its audit log, so it did not send it. Try again in a moment."),
+                "could not write the audit row before the call")
 
         read_only = bool((tool.annotations or {}).get("readOnlyHint"))
         try:
@@ -336,16 +397,18 @@ class Gateway:
             return finish(failure.kind, _error(message), failure.message)
 
         await self._note_health(server.id, None)
-        result = _capped(result)
-        if result.is_error:
+        upstream_error = result.is_error
+        capped = _capped(result, has_output_schema=bool(tool.output_schema))
+        if upstream_error:
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text=tidy_error_text(c.text)) if isinstance(c, types.TextContent) else c for c in result.content],
+                content=[types.TextContent(type="text", text=tidy_error_text(c.text)) if isinstance(c, types.TextContent) else c for c in capped.content],
                 is_error=True,
-                structured_content=result.structured_content,
+                structured_content=capped.structured_content,
             )
             text = " ".join(c.text for c in result.content if isinstance(c, types.TextContent))
             return finish("tool_error", result, text[:1000] or "upstream reported an error")
-        return finish("ok", result)
+        # The call worked; a cut result is noted in the audit row, without any of its data.
+        return finish("ok", capped, None if capped is result else "result cut to the size limit")
 
     async def _note_health(self, server_id: int, failure: upstreams.UpstreamFailure | None) -> None:
         """Let real calls update the status page, not only the periodic refresh."""
@@ -363,13 +426,45 @@ class Gateway:
                 server.last_error, server.last_checked_at = failure.message, now
                 await s.commit()
 
-    async def _record(self, event: AuditEvent) -> None:
+    async def _record_pending(self, event: AuditEvent) -> bool:
+        """Commit the call's row before the upstream sees the request. False if that failed."""
+        event.outcome = PENDING
         try:
             async with self.db.session() as s:
                 s.add(event)
                 await s.commit()
+        except Exception:
+            log.exception("could not write the audit row for %s; the call is refused", event.public_name)
+            event.outcome, event.id = None, None  # the final write tries a fresh row
+            return False
+        return True
+
+    async def _record(self, event: AuditEvent) -> None:
+        """Write how the call ended: a new row, or the end of the pending one."""
+        try:
+            async with self.db.session() as s:
+                if event.id is None:
+                    s.add(event)
+                else:
+                    await s.execute(update(AuditEvent).where(AuditEvent.id == event.id).values(
+                        outcome=event.outcome, error=event.error, duration_ms=event.duration_ms))
+                await s.commit()
         except Exception:  # an audit write failure must be loud, but must not hide the result
+            # A pending row stays as it is, and the next start marks it interrupted.
             log.exception("failed to write audit event for %s", event.public_name)
+
+    async def mark_interrupted(self) -> int:
+        """Rows still pending when the gateway starts: their call was cut off by a crash or restart.
+
+        The gateway runs as one replica, so no other process can have calls in
+        flight. Whether the upstream finished such a call is unknown.
+        """
+        async with self.db.session() as s:
+            result = await s.execute(update(AuditEvent).where(AuditEvent.outcome == PENDING).values(
+                outcome=INTERRUPTED,
+                error="The gateway stopped before this call finished. The upstream may have done it; check before retrying."))
+            await s.commit()
+        return result.rowcount or 0
 
 
 _ONE_PROBLEM = re.compile(
@@ -395,24 +490,85 @@ def tidy_error_text(text: str) -> str:
     return f"Invalid arguments for {m.group(1)}. " + "; ".join(problems) + "."
 
 
-def _capped(result: types.CallToolResult) -> types.CallToolResult:
-    """Cut text content past MAX_RESULT_CHARS, and say so, instead of passing it all to the model."""
-    total, content, cut = 0, [], False
-    for c in result.content:
-        if isinstance(c, types.TextContent):
-            room = MAX_RESULT_CHARS - total
-            if len(c.text) > room:
-                c = types.TextContent(type="text", text=c.text[: max(room, 0)])
-                cut = True
-            total += len(c.text)
-        content.append(c)
-        if cut:
-            break
-    if not cut:
+def _json_size(model: Any) -> int:
+    return len(model.model_dump_json(by_alias=True, exclude_none=True))
+
+
+def _plain_json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+_EMPTY_TEXT_SIZE = _json_size(types.TextContent(type="text", text="")) + 1  # the block, and a comma
+_CAP_RESERVE = 1_000  # for the result's own fields and the gateway's note
+_PART_NAMES = {"text": "text", "image": "an image", "audio": "audio", "resource": "an embedded resource",
+               "resource_link": "a resource link"}
+
+
+def _fit_text(text: str, room: int) -> str:
+    """The longest start of `text` whose JSON form fits in `room` characters."""
+
+    def cost(n: int) -> int:
+        return len(json.dumps(text[:n], ensure_ascii=False)) - 2
+
+    # Quotes, backslashes and control characters take more than one character in
+    # JSON, so the length is found by halving: about 18 tries for 256,000 characters.
+    low, high = 0, min(len(text), max(room, 0))
+    while low < high:
+        middle = (low + high + 1) // 2
+        if cost(middle) <= room:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+def _capped(result: types.CallToolResult, has_output_schema: bool = False) -> types.CallToolResult:
+    """Keep the whole result within MAX_RESULT_CHARS of JSON, and say what was cut.
+
+    Every part counts, not only text: images and audio (their base64 data),
+    embedded resources, structured content and metadata. Text is cut short. A
+    part that cannot be cut sensibly, such as an image or the structured
+    content, is left out whole.
+    """
+    size = _json_size(result)
+    if size <= MAX_RESULT_CHARS:
         return result
-    content.append(types.TextContent(type="text", text=f"[gateway: result truncated at {MAX_RESULT_CHARS} characters]"))
-    structured = result.structured_content if len(json.dumps(result.structured_content or {}, default=str)) <= MAX_RESULT_CHARS else None
-    return types.CallToolResult(content=content, is_error=result.is_error, structured_content=structured)
+    room = MAX_RESULT_CHARS - _CAP_RESERVE
+    content: list[Any] = []
+    left_out: list[str] = []
+    for part in result.content:
+        cost = _json_size(part) + 1
+        if cost <= room:
+            content.append(part)
+            room -= cost
+        elif isinstance(part, types.TextContent) and room > _EMPTY_TEXT_SIZE:
+            content.append(types.TextContent(type="text", text=_fit_text(part.text, room - _EMPTY_TEXT_SIZE)))
+            room -= _json_size(content[-1]) + 1
+            left_out.append("the rest of the text")
+        else:
+            left_out.append(_PART_NAMES.get(part.type, part.type))
+    structured = result.structured_content
+    if structured is not None:
+        cost = _plain_json_size(structured) + len('"structuredContent":,')
+        if cost <= room:
+            room -= cost
+        else:
+            structured = None
+            left_out.append("the structured content")
+    meta = result.meta
+    if meta and _plain_json_size(meta) + len('"_meta":,') > room:
+        meta = None
+        left_out.append("the metadata")
+    content.append(types.TextContent(type="text", text=(
+        f"[gateway: result truncated to fit the {MAX_RESULT_CHARS}-character limit (it was {size}). "
+        f"Left out: {', '.join(dict.fromkeys(left_out))}. Ask for less, for example a narrower filter.]"
+    )))
+    # A client checks structured content against the tool's output schema, and refuses a
+    # successful result that has none. Marking the cut result as an error tells it, and the
+    # model, that this is a partial answer rather than a broken tool.
+    dropped_structured = result.structured_content is not None and structured is None
+    return types.CallToolResult(content=content, structured_content=structured, meta=meta,
+                                is_error=result.is_error or (has_output_schema and dropped_structured))
 
 
 def _error(message: str) -> types.CallToolResult:

@@ -104,7 +104,7 @@ class ApprovalGate:
         self._emit = emit
         self._timeout = timeout_seconds
 
-    async def ask(self, *, call_id: str, name: str, arguments: dict[str, Any], summary: str, server: str) -> Verdict:
+    async def ask(self, *, call_id: str, name: str, arguments: dict[str, Any], summary: str, server: str, server_name: str = "") -> Verdict:
         pending = self._registry.open(self._conversation_id, self._owner, name)
         self._emit(
             {
@@ -114,7 +114,8 @@ class ApprovalGate:
                 "name": name,
                 "input": arguments,
                 "summary": summary,
-                "server": server,
+                "server": server,  # the slug, e.g. store-north
+                "server_name": server_name or server,  # what the person reads, e.g. "Store: North"
                 "read_only": False,
             }
         )

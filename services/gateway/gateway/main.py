@@ -36,6 +36,7 @@ from gateway.config import Settings
 from gateway.core import Gateway
 from gateway.db import Database, Server, User
 from gateway.mcp_endpoint import mcp_asgi_app
+from gateway.ratelimit import RateLimiter, parse_period
 from gateway.security import ChatTokens, CredentialBox, hash_password
 
 log = logging.getLogger("gateway")
@@ -109,8 +110,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     except ValueError as exc:
         # Browser sign-in sends tokens, so it needs https (or localhost). API keys do not depend on it.
         log.warning("OAuth sign-in is off (PUBLIC_URL=%s): %s", settings.public_url, exc)
+    limiter = (
+        RateLimiter(settings.mcp_rate_average, parse_period(settings.mcp_rate_period), settings.mcp_rate_burst)
+        if settings.mcp_rate_average > 0 else None
+    )
     mcp_app, mcp_manager = mcp_asgi_app(
-        gateway, db, chat_tokens, oauth_provider, settings.mcp_allowed_hosts(), settings.mcp_allowed_origins()
+        gateway, db, chat_tokens, oauth_provider, settings.mcp_allowed_hosts(), settings.mcp_allowed_origins(), limiter
     )
     provisioner = (
         stores.Provisioner(settings.provisioner_url, settings.provisioner_token)
@@ -120,6 +125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await db.create_all()
+        if interrupted := await gateway.mark_interrupted():
+            log.warning("%d tool calls were still running when the gateway last stopped; audited as interrupted", interrupted)
         await bootstrap_admin(db, settings)
         await bootstrap_servers(db, gateway, settings)
         async with mcp_manager.run(), anyio.create_task_group() as tg:

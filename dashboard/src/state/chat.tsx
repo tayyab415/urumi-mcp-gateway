@@ -132,7 +132,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
       } else if (type === "approval_required") {
         const summary = (ev.summary as string) ?? "";
-        const serverName = summary.includes(" on ") ? summary.slice(summary.lastIndexOf(" on ") + 4) : (ev.server as string);
+        // The chat service sends the server's display name as data ("Store: North"); older ones only had it in the summary.
+        const serverName = typeof ev.server_name === "string" && ev.server_name
+          ? ev.server_name
+          : summary.includes(" on ") ? summary.slice(summary.lastIndexOf(" on ") + 4) : (ev.server as string);
         patchTurn(id, (t) => ({
           ...t, status: "waiting", waitingSince: now,
           steps: t.steps.map((s) => s.name === "plan" ? { ...s, output: "change" } : s.id === ev.call_id ? { ...s, status: "waiting", readOnly: false, approval: { requestId: ev.request_id as string, summary, server: serverName } } : s),

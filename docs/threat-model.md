@@ -86,11 +86,11 @@ to another" below.
 |---|---|---|---|
 | 1 | A stranger guesses a login password | Passwords are hashed with scrypt. Login has a rate limit of 10 attempts, then 20 a minute. | On this VM the limit is shared by all clients (k3d hides addresses), so a stranger could slow down everyone's sign-in. |
 | 2 | A stranger calls `/mcp` without a key | Every request is checked before the MCP layer; no key gets HTTP 401. | None found. |
-| 3 | A stolen API key | The admin revokes it on the Team page, and the next request fails, even on an open connection. The audit log shows the key's prefix on each call. Rate limit: 50 at once, then 10 a second per key. | Keys don't expire. A thief can act as that person until someone notices. |
+| 3 | A stolen API key | The admin revokes it on the Team page, and the next request fails, even on an open connection. The audit log shows the key's prefix on each call. Rate limit: 50 at once, then 10 a second per key. The gateway counts this after it has checked the key, so writing the same key with extra spaces in the header does not buy a fresh allowance (Traefik's limit in front counts the raw header, and could be fooled that way). | Keys don't expire. A thief can act as that person until someone notices. The gateway keeps its counts in memory, so a gateway restart refills every allowance. |
 | 4 | A stranger runs up the Bedrock bill | Chat needs a login. Each chat session gets 20 requests at once, then 30 a minute. The IAM user can call one model and nothing else, and its key expires on 2026-11-24. | A logged-in member could still spend up to that rate. |
 | 5 | Cross-site request forgery against a logged-in admin | Every change through the dashboard API needs the `X-Urumi-CSRF` header, and the API never approves a cross-site preflight. The cookie is `SameSite=Strict`, `Secure` and `HttpOnly`. | None found. |
 | 6 | Traffic sniffed on the way | HTTPS everywhere, with Let's Encrypt certificates. Plain HTTP gets a 301 redirect to HTTPS, and the cookie is never sent over HTTP. | No HSTS header yet, so a browser's very first visit over plain HTTP could be intercepted before the redirect. |
-| 7 | A member calls an admin-only tool | The gateway hides the tool from the member's list and refuses a direct call, recording it as `denied`. Chat sees the same list. | None found. Checked live with four simulated members. |
+| 7 | A member calls an admin-only tool | The gateway hides the tool from the member's list and refuses a direct call, recording it as `denied`. The member gets the same answer as for a tool that does not exist (JSON-RPC error `-32602`, "Unknown tool"), so probing names reveals nothing. Chat sees the same list. | None found. Checked live with four simulated members. |
 | 8 | A member reads another member's activity | Members see only their own audit rows. Conversations belong to a hash of their owner's credential: Bob couldn't continue Ana's conversation or approve its held calls. | All members share the store's data. Anyone with `list_orders` sees every customer's order. That is the job, but it should be said. |
 | 9 | Someone inside the cluster calls `woo-mcp` directly, skipping roles and audit | `woo-mcp` checks no credential of its own, so a NetworkPolicy is the guard: only the gateway may connect. Shipping, supplier and Slack also each check a token from the gateway. | If NetworkPolicy enforcement stopped (another CNI, a misconfiguration), `woo-mcp` would be open inside the cluster. A shared secret between the gateway and `woo-mcp` would be a second layer. |
 | 10 | An admin adds a server whose URL points at internal addresses or cloud metadata (SSRF) | The URL is checked when it is saved and again right before every connection: loopback, link-local and cloud metadata (including `::ffff:169.254.169.254`), carrier-grade NAT and reserved ranges are refused. The gateway's NetworkPolicy also blocks private ranges, which also covers a DNS name that later resolves to an internal address. The VM has no Google service account, so metadata holds no credentials. | None found. |
@@ -143,16 +143,21 @@ What limits the damage:
   upstream can't pass its tool off as another server's.
 
 - **Tool pinning** ([design.md, section 15](design.md)). Each tool's
-  description, schemas and hints are hashed when an admin first connects the
-  server. If the upstream later changes any of them, or adds a tool, that tool
-  is hidden from everyone and calls to it are refused until an admin compares
-  the old and new text on the Permissions page and approves it. A tool added
-  later starts admin-only. Invisible characters, a known way to hide
-  instructions from a person while the model still reads them, are stripped,
-  and their presence holds the tool.
-- **Size limits.** Descriptions are cut at 1,500 characters and tool results
-  at 256,000, with a visible note, so one upstream cannot flood the model's
-  context.
+  description, schemas and hints are hashed when the server first answers:
+  when an admin connects it, or when the gateway registers a provisioned
+  store's server. If the upstream later changes any of them, or adds a tool,
+  that tool is hidden from everyone and calls to it are refused until an admin
+  compares the old and new text on the Permissions page and approves it. This
+  holds for store servers too: they get no standing trust for tools they add
+  later. A tool added later starts admin-only. Invisible characters, a known
+  way to hide instructions from a person while the model still reads them, are
+  stripped, and their presence holds the tool.
+- **Size limits.** Descriptions are cut at 1,500 characters. A whole tool
+  result is cut at 256,000 characters of JSON, counting text, images, audio,
+  embedded resources and structured data, with a note saying what was left
+  out. The gateway also stops reading an upstream's answer past 4 MiB, before
+  it is parsed. So one upstream cannot flood the model's context or the
+  gateway's memory.
 
 Checked on the VM: a planted Slack message told the assistant to cancel an
 order, and it ignored it. Pinning is covered by `tests/test_pinning.py`; the
@@ -197,9 +202,25 @@ compromise there matters most. Its permissions come in three layers
 namespaces and bind one role; inside a store namespace it can do what Helm
 needs; and an admission policy refuses any write by it outside namespaces
 labelled as stores, including granting itself rights in `urumi-app` or
-labelling `urumi-app` as a store (both tried and refused on the VM). Only the
-gateway can reach it (NetworkPolicy plus a shared token). What is left: it can
-delete any store namespace, and it can read every store's Secret.
+labelling `urumi-app` as a store (both tried and refused on the VM).
+
+Namespace rights alone would also let it lift a store's Pod Security fence:
+relabel the namespace `privileged`, then run a container with the host's
+processes and a mount of the host's disk. A review showed the API server
+accepting exactly that. The same admission policy now stops it: a namespace
+it creates must be named `store-*` and enforce `baseline` or `restricted`; an
+update may not lower that level or pin an old Pod Security version; and the
+Pods and Pod templates it writes may not use the host's process, IPC or
+network namespace, privileged containers or `hostPath` volumes. Checked with
+server-side dry runs as its ServiceAccount against a local API server of the
+VM's Kubernetes version (1.36.5): the old policy let those requests through,
+the new one refuses them, and the store chart still installs.
+
+Only the gateway can reach it (NetworkPolicy plus a shared token). What is
+left: it can delete any store namespace, and it can read every store's
+Secret. Inside a store namespace it can still write anything Pod Security
+"baseline" allows, such as a root container that the store's own WordPress
+image needs.
 
 ## The public demo's sign-in list
 
@@ -217,10 +238,14 @@ stores. It is open item 1.
 ## Accountability
 
 Each audit row names the person, and the key prefix or chat conversation. No API
-call deletes or edits audit rows. Root on the VM could still edit the SQLite
-file, so the log protects against members, not against the host. Store data
-changed through the WooCommerce admin directly, not through the gateway, has no
-gateway audit row.
+call deletes or edits audit rows. Every tools/call writes one, search-mode
+tools and refusals included. A call's row is committed before the upstream sees
+the request, so a gateway that crashes mid-call leaves a row behind, which the
+next start marks `interrupted` (the upstream may have done it). If that first
+write fails, the call is refused and never sent. Root on the VM could still
+edit the SQLite file, so the log protects against members, not against the
+host. Store data changed through the WooCommerce admin directly, not through
+the gateway, has no gateway audit row.
 
 ## Open items, in priority order
 

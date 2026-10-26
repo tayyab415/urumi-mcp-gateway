@@ -35,8 +35,10 @@ ingress:
       # Sign-in attempts, per client address. Behind k3d's load balancer every
       # client arrives from the same address, so this is one shared limit.
       login: {average: 20, period: 1m, burst: 10}
-      # Per Authorization header: each API key or chat session has its own
-      # allowance. Requests without the header share one.
+      # Per Authorization header, as Traefik sees it: the raw text, so the same
+      # key spelled with extra spaces counts separately here. The gateway's own
+      # limit (gateway.rateLimit) counts per verified key. Requests without the
+      # header share one allowance.
       mcp: {average: 10, period: 1s, burst: 50, header: Authorization}
       # Each chat turn is a Bedrock call, which costs money.
       chat: {average: 30, period: 1m, burst: 20, header: Authorization}
@@ -62,6 +64,12 @@ gateway:
   # click, no password. Anyone who can open the dashboard can then act as any
   # person, admins included. Only for a demo deployment.
   demoLogin: false
+  # The gateway's own limit on /mcp, per API key, OAuth token or chat session,
+  # counted after it has checked the credential, so however the Authorization
+  # header is written. The same numbers as ingress.traefik.rateLimits.mcp.
+  # Kept in the gateway's memory, which suits its one replica. average: 0
+  # turns it off.
+  rateLimit: {average: 10, period: 1s, burst: 50}
   # The servers a fresh install starts with. Applied once, when the gateway's
   # database has no servers; after that admins manage them in the dashboard.
   bootstrapServers: [woo, shipping, supplier]

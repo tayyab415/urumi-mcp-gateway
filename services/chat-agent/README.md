@@ -45,10 +45,16 @@ Events in one gated call, in this order:
 ```text
 {"type":"tool_call","id":"<call id>","name":"woo__update_order_status","input":{...}}
 {"type":"approval_required","request_id":"<id>","call_id":"<call id>","name":"woo__update_order_status",
- "input":{...},"summary":"Run woo__update_order_status on WooCommerce","server":"woo","read_only":false}
+ "input":{...},"summary":"Run woo__update_order_status on WooCommerce","server":"woo","server_name":"WooCommerce",
+ "read_only":false}
 {"type":"approval_decided","request_id":"<id>","decision":"approve" | "deny" | "timeout"}
 {"type":"tool_result","id":"<call id>","name":"...","is_error":false,"duration_ms":812,"output":"..."}
 ```
+
+`server` is the slug and `server_name` what the person reads, for example
+`store-north` and `Store: North`. Chat takes the name from the tool's
+`_meta["urumi.io/server"]`, which the gateway sets, and the approval card shows
+it, so an admin with several stores sees which one the change is for.
 
 The dashboard answers with:
 
@@ -79,6 +85,7 @@ Who may answer: the request is tied to the conversation, and the conversation to
 | Situation | What happens |
 |---|---|
 | Admin disables a server | The next message lists tools fresh, so its tools are gone. A stale call to it is refused by the gateway, and the model is told "did not run". |
+| A tool disappears between listing and calling (its store deleted, its role changed) | The gateway answers with a JSON-RPC error, `-32602` "Unknown tool: …". The model is told "The gateway rejected the call: Unknown tool: … It did not run." |
 | The model names a tool it wasn't given (disabled before this turn, hidden by role, or made up) | The call never leaves chat. The model gets "There is no tool named … The call did not run" as the tool result and can explain. Without this the SDK would end the turn with an error. The gateway never sees the call, so the chat log records it instead of the audit log. |
 | Key revoked mid-session | The next call gets 401. The model is told "the call did not run". The gateway's 401 carries JSON-RPC code `-32010`; it used to send `-32001`, which the MCP SDK uses for "request timed out", so chat reported the refusal as "may have run". |
 | Tool call times out | The model is told "outcome unknown, may have run, don't retry, offer to check". |

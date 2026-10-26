@@ -8,10 +8,16 @@ store namespaces, reads each record, looks at the Pods and the setup Job, and
 carries on from there.
 
     Provisioning ──▶ Ready
-         │
+         │    ▲
+         │    └── Retry (a fresh deadline; a failed setup Job is run again)
          └──▶ Failed      (setup Job failed, or not ready before the deadline)
 
     any phase ──▶ Deleting ──▶ gone (the namespace and everything in it)
+
+Deleting is one way. A delete request is its own annotation, which only the
+DELETE call sets and nothing removes, and it outranks the phase annotation. A
+reconcile pass that started before the delete may still write "Ready" when it
+ends, but the store stays Deleting.
 """
 
 from __future__ import annotations
@@ -34,6 +40,10 @@ ANN_CREATED = "urumi.io/created-at"
 ANN_DEADLINE = "urumi.io/deadline"
 ANN_READY_AT = "urumi.io/ready-at"
 ANN_ATTEMPTS = "urumi.io/helm-attempts"
+# When someone asked to delete the store. Set once, never cleared: see phase_of.
+ANN_DELETE = "urumi.io/delete-requested"
+# Set by a retry of a Failed store, cleared once the store's install has run again.
+ANN_RETRY = "urumi.io/retry-requested"
 
 # Lowercase letters, digits and single hyphens: it becomes a namespace, a Helm
 # release, a hostname and the gateway's tool prefix, so it must suit all four.
@@ -55,6 +65,13 @@ def check_slug(slug: str) -> str | None:
 
 def namespace_for(slug: str) -> str:
     return f"store-{slug}"
+
+
+def phase_of(annotations: dict[str, str], terminating: bool = False) -> Phase:
+    """The store's phase. A delete request outranks whatever phase was written last."""
+    if terminating or annotations.get(ANN_DELETE):
+        return "Deleting"
+    return annotations.get(ANN_PHASE, "Provisioning")  # type: ignore[return-value]
 
 
 def now_utc() -> datetime:

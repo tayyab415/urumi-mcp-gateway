@@ -57,7 +57,9 @@ The credential is checked on every HTTP request. A revoked key, a deactivated us
 
 Tool names are `<server slug>__<tool>`, e.g. `woo__list_orders`, `supplier__list_products`.
 
-Refusals come back as tool results with `isError: true` and a plain sentence, not as protocol errors: unknown tool, server disabled, role not allowed, upstream unreachable, upstream timed out, upstream rejected the stored credential. A timeout on a tool that can change data says `OUTCOME UNKNOWN`.
+A tool the caller cannot use, because it does not exist or because their role or store ownership excludes it, gets a JSON-RPC error: code `-32602`, message `Unknown tool: <name>`, the same for both so the answer does not reveal which tools exist. Other refusals and failures come back as tool results with `isError: true` and a plain sentence: server disabled, tool held for review, upstream unreachable, upstream timed out, upstream rejected the stored credential, result cut to the size limit. A timeout on a tool that can change data says `OUTCOME UNKNOWN`. Too many requests with one credential (50 at once, then 10 a second) get HTTP 429 with `Retry-After`.
+
+Tools in `tools/list` carry `_meta["urumi.io/server"]` = `{"slug", "name"}`, the server they come from.
 
 **Dashboard API**: `/api/...`, cookie session plus header `X-Urumi-CSRF: 1` on writes. See `/api/docs`.
 

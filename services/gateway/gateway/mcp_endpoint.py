@@ -8,11 +8,15 @@ anything the client sends inside the MCP message.
 Because the credential is checked on every HTTP request, not once per
 connection, a revoked key or a disconnected app fails on its very next call,
 even from a client that connected before the revocation.
+
+Once the credential is known, `ApiKeyAuth` also counts its requests
+(ratelimit.py) and answers HTTP 429 past the limit.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from datetime import timedelta
 from urllib.parse import parse_qs
@@ -27,9 +31,10 @@ from sqlalchemy import select
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from gateway import toolsearch
-from gateway.core import Gateway, Identity
+from gateway.core import Gateway, Identity, UnknownTool
 from gateway.db import ApiKey, Database, LoginSession, User, utcnow
 from gateway.oauth import ACCESS_PREFIX, SCOPE, GatewayOAuthProvider
+from gateway.ratelimit import RateLimiter
 from gateway.security import ChatTokens, sha256_hex
 
 # JSON-RPC error code for "no valid credential", sent with HTTP 401. JSON-RPC
@@ -38,6 +43,8 @@ from gateway.security import ChatTokens, sha256_hex
 # that read our 401 as a timeout would report "the call may have run" when it was
 # refused, so ours sits in the gap: -32010.
 NOT_AUTHENTICATED = -32010
+# Sent with HTTP 429 when one credential goes over its rate limit; the same gap.
+RATE_LIMITED = -32011
 
 INSTRUCTIONS = (
     "Urumi team gateway. Tools from several connected servers, named <server>__<tool>. "
@@ -66,7 +73,12 @@ def build_server(gateway: Gateway) -> Server:
             return await toolsearch.search(gateway, who, params.arguments or {})
         if params.name == toolsearch.CALL:
             return await toolsearch.call(gateway, who, params.arguments or {})
-        return await gateway.call_tool(who, params.name, params.arguments)
+        try:
+            return await gateway.call_tool(who, params.name, params.arguments)
+        except UnknownTool as exc:
+            # A protocol error, not a tool result: the MCP spec answers an unknown tool
+            # with JSON-RPC "invalid params". The call was audited before this.
+            raise MCPError(code=types.INVALID_PARAMS, message=str(exc)) from None
 
     return Server(
         "urumi-gateway",
@@ -163,11 +175,13 @@ def _wants_search(scope: Scope) -> bool:
 class ApiKeyAuth:
     """Accepts a user's API key (external clients), an OAuth access token (browser sign-in) or a chat token (dashboard chat)."""
 
-    def __init__(self, app: ASGIApp, db: Database, chat_tokens: ChatTokens, oauth: GatewayOAuthProvider | None = None):
+    def __init__(self, app: ASGIApp, db: Database, chat_tokens: ChatTokens, oauth: GatewayOAuthProvider | None = None,
+                 limiter: RateLimiter | None = None):
         self.app = app
         self.db = db
         self.chat_tokens = chat_tokens
         self.oauth = oauth
+        self.limiter = limiter
 
     def challenge(self, token_sent: bool) -> bytes:
         """The WWW-Authenticate value. With OAuth on, it points clients at the metadata that starts a browser sign-in (RFC 9728)."""
@@ -206,6 +220,19 @@ class ApiKeyAuth:
             })
             await send({"type": "http.response.body", "body": body})
             return
+        # Counted by the credential that passed the check (its SHA-256, which for an API
+        # key is the stored key hash), so every spelling of the header shares one allowance.
+        if self.limiter is not None and (wait := self.limiter.wait(sha256_hex(key))):
+            retry = max(1, math.ceil(wait))
+            body = json.dumps({"jsonrpc": "2.0", "id": None, "error": {
+                "code": RATE_LIMITED, "message": f"Too many requests with this credential. Try again in {retry} s."}}).encode()
+            await send({
+                "type": "http.response.start",
+                "status": 429,
+                "headers": [(b"content-type", b"application/json"), (b"retry-after", str(retry).encode())],
+            })
+            await send({"type": "http.response.body", "body": body})
+            return
         if _wants_search(scope):
             who = replace(who, tool_mode="search")
         scope.setdefault("state", {})["identity"] = who
@@ -215,6 +242,7 @@ class ApiKeyAuth:
 def mcp_asgi_app(
     gateway: Gateway, db: Database, chat_tokens: ChatTokens, oauth: GatewayOAuthProvider | None = None,
     allowed_hosts: list[str] | None = None, allowed_origins: list[str] | None = None,
+    limiter: RateLimiter | None = None,
 ) -> tuple[ASGIApp, StreamableHTTPSessionManager]:
     manager = session_manager(build_server(gateway), allowed_hosts or [], allowed_origins or [])
-    return ApiKeyAuth(StreamableHTTPASGIApp(manager), db, chat_tokens, oauth), manager
+    return ApiKeyAuth(StreamableHTTPASGIApp(manager), db, chat_tokens, oauth, limiter), manager

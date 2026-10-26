@@ -48,19 +48,23 @@ class StoreIn(BaseModel):
     owner_email: str = Field(max_length=255)
 
 
+def terminating(ns: client.V1Namespace) -> bool:
+    return ns.status is not None and ns.status.phase == "Terminating"
+
+
 def store_out(ns: client.V1Namespace, settings: Settings) -> dict[str, Any]:
     labels = ns.metadata.labels or {}
     ann = ns.metadata.annotations or {}
     slug = labels[state.LABEL_SLUG]
-    terminating = ns.status is not None and ns.status.phase == "Terminating"
+    phase = state.phase_of(ann, terminating(ns))
     return {
         "slug": slug,
         "name": ann.get(state.ANN_NAME, slug),
         "namespace": ns.metadata.name,
         "owner_id": int(labels.get(state.LABEL_OWNER, "0")),
         "owner_email": ann.get(state.ANN_OWNER_EMAIL, ""),
-        "phase": "Deleting" if terminating else ann.get(state.ANN_PHASE, "Provisioning"),
-        "reason": ann.get(state.ANN_REASON, ""),
+        "phase": phase,
+        "reason": "Deleting" if phase == "Deleting" else ann.get(state.ANN_REASON, ""),
         "url": f"http://{slug}.{settings.store_domain}",
         "admin_url": f"http://{slug}.{settings.store_domain}/wp-admin/",
         "mcp_url": f"http://{slug}-woo-mcp.{ns.metadata.name}.svc.cluster.local:8000/mcp",
@@ -119,29 +123,47 @@ class Provisioner:
             log.exception("reconcile %s failed", slug)
             ann = ns.metadata.annotations or {}
             deadline = state.parse_iso(ann.get(state.ANN_DEADLINE))
-            if ann.get(state.ANN_PHASE) == "Provisioning" and deadline is not None and state.now_utc() >= deadline:
+            if state.phase_of(ann) == "Provisioning" and deadline is not None and state.now_utc() >= deadline:
                 # The deadline holds even when a step keeps failing: fail cleanly, with the reason.
-                await self._annotate(ns.metadata.name, {
+                await self._write_phase(ns.metadata.name, {
                     state.ANN_PHASE: "Failed",
                     state.ANN_REASON: f"Not ready before the provisioning deadline. Last error: {cluster.short_error(exc)}",
                 })
             else:
-                await self._annotate(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {cluster.short_error(exc)}"})
+                await self._write_phase(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {cluster.short_error(exc)}"})
         finally:
             self.busy.discard(slug)
 
-    async def _annotate(self, namespace: str, values: dict[str, str]) -> None:
+    async def _annotate(self, namespace: str, values: dict[str, str | None]) -> None:
         try:
             await to_thread.run_sync(cluster.annotate, namespace, values)
         except Exception:  # noqa: BLE001
             log.exception("could not annotate %s", namespace)
 
+    async def _write_phase(self, namespace: str, values: dict[str, str | None]) -> None:
+        """Record what this pass worked out, unless the store was deleted while it worked.
+
+        A pass can spend minutes in Helm, working from the namespace as it was
+        when the pass began. So the namespace is read again just before writing.
+        In the moment between that read and the write, the delete annotation
+        still wins (state.phase_of).
+        """
+        try:
+            current = await to_thread.run_sync(cluster.read_namespace, namespace)
+        except Exception:  # noqa: BLE001 - like _annotate: the next pass works it out again
+            log.exception("could not re-read %s before recording this pass", namespace)
+            return
+        if current is None or state.phase_of(current.metadata.annotations or {}, terminating(current)) == "Deleting":
+            log.info("%s was deleted during this reconcile pass; not recording %s", namespace, values.get(state.ANN_PHASE, "its reason"))
+            return
+        await self._annotate(namespace, values)
+
     async def reconcile(self, ns: client.V1Namespace, slug: str) -> None:
         namespace = ns.metadata.name
         ann = ns.metadata.annotations or {}
-        if ns.status is not None and ns.status.phase == "Terminating":
+        if terminating(ns):
             return  # Kubernetes is already removing everything in it
-        phase: state.Phase = ann.get(state.ANN_PHASE, "Provisioning")  # type: ignore[assignment]
+        phase = state.phase_of(ann)
 
         if phase == "Deleting":
             self.installed.discard(slug)
@@ -155,7 +177,16 @@ class Provisioner:
             return
 
         if phase == "Provisioning":
-            if not await self._ensure_release(namespace, slug, ann):
+            retrying = bool(ann.get(state.ANN_RETRY))
+            if retrying:
+                # A retry of a Failed store. A setup Job that ran out of attempts never runs
+                # again, and Helm sees nothing to change in a release that is already
+                # deployed. So the failed Job goes, and the install below runs even though
+                # the release exists: Helm makes a fresh Job, with the same Secret and volumes.
+                if await to_thread.run_sync(cluster.delete_failed_setup_job, namespace, slug):
+                    log.info("store %s: removed the failed setup Job to run it again", slug)
+                self.installed.discard(slug)
+            if not await self._ensure_release(namespace, slug, ann, rerun=retrying):
                 return
             seen = await to_thread.run_sync(cluster.observe, namespace, slug)
             new_phase, reason = state.next_phase(phase, state.now_utc(), state.parse_iso(ann.get(state.ANN_DEADLINE)), seen)
@@ -166,17 +197,21 @@ class Provisioner:
             elif new_phase == "Failed":
                 log.warning("store %s failed: %s", slug, reason)
             if update[state.ANN_PHASE] != phase or update[state.ANN_REASON] != ann.get(state.ANN_REASON, ""):
-                await self._annotate(namespace, update)
+                await self._write_phase(namespace, update)
             return
 
         if phase == "Ready":
             seen = await to_thread.run_sync(cluster.observe, namespace, slug)
             _, reason = state.next_phase(phase, state.now_utc(), None, seen)
             if reason != ann.get(state.ANN_REASON, ""):
-                await self._annotate(namespace, {state.ANN_REASON: reason})
+                await self._write_phase(namespace, {state.ANN_REASON: reason})
 
-    async def _ensure_release(self, namespace: str, slug: str, ann: dict[str, str]) -> bool:
-        """Make sure the store's Helm release is installed. False means "not yet"."""
+    async def _ensure_release(self, namespace: str, slug: str, ann: dict[str, str], rerun: bool = False) -> bool:
+        """Make sure the store's Helm release is installed. False means "not yet".
+
+        `rerun` installs again even over a deployed release (a retry), then clears
+        the retry request.
+        """
         await to_thread.run_sync(cluster.ensure_rolebinding, namespace, self.settings)
         await to_thread.run_sync(cluster.ensure_secret, namespace)
         if slug in self.installed:
@@ -184,7 +219,7 @@ class Provisioner:
 
         status = await cluster.helm_status(namespace, slug)
         helm_state = ((status or {}).get("info") or {}).get("status")
-        if helm_state == "deployed":
+        if helm_state == "deployed" and not rerun:
             self.installed.add(slug)
             return True
         if helm_state and helm_state.startswith("pending"):
@@ -195,7 +230,7 @@ class Provisioner:
 
         attempts = int(ann.get(state.ANN_ATTEMPTS, "0"))
         if attempts >= self.settings.max_helm_attempts:
-            await self._annotate(namespace, {
+            await self._write_phase(namespace, {
                 state.ANN_PHASE: "Failed",
                 state.ANN_REASON: f"Helm install failed {attempts} times. Last error: {ann.get(state.ANN_REASON, '')[:400]}",
             })
@@ -203,9 +238,11 @@ class Provisioner:
         await self._annotate(namespace, {state.ANN_ATTEMPTS: str(attempts + 1)})
         result = await cluster.helm_install(slug, ann.get(state.ANN_NAME, slug), self.settings)
         if not result.ok:
-            await self._annotate(namespace, {state.ANN_REASON: f"Helm: {result.output[-400:]}"})
+            await self._write_phase(namespace, {state.ANN_REASON: f"Helm: {result.output[-400:]}"})
             return False
         self.installed.add(slug)
+        if rerun:
+            await self._annotate(namespace, {state.ANN_RETRY: None})  # done: the next pass only watches
         log.info("store %s: Helm release installed", slug)
         return True
 
@@ -256,13 +293,15 @@ class Provisioner:
         if current["phase"] == "Deleting":
             raise HTTPException(409, f"{slug!r} is being deleted. Try again when it is gone.")
         if current["phase"] == "Failed":
-            # Retrying a failed store: same namespace, same Secret, a fresh deadline.
+            # Retrying a failed store: same namespace, same Secret, a fresh deadline, and
+            # the reconcile loop installs again and reruns a failed setup Job.
             now = state.now_utc()
             cluster.annotate(existing.metadata.name, {
                 state.ANN_PHASE: "Provisioning",
                 state.ANN_REASON: "Retrying",
                 state.ANN_DEADLINE: state.iso(now + timedelta(seconds=self.settings.provision_timeout_seconds)),
                 state.ANN_ATTEMPTS: "0",
+                state.ANN_RETRY: state.iso(now),
             })
             self.installed.discard(slug)
             self.wake()
@@ -274,7 +313,11 @@ class Provisioner:
         existing = await to_thread.run_sync(cluster.read_namespace, namespace)
         if existing is None or (existing.metadata.labels or {}).get(state.LABEL_STORE) != "true":
             raise HTTPException(404, f"No store called {slug!r}.")
-        await to_thread.run_sync(cluster.annotate, namespace, {state.ANN_PHASE: "Deleting", state.ANN_REASON: "Deleting"})
+        # The delete request is kept apart from the phase, which reconcile passes write:
+        # nothing clears it, so a pass that was already running cannot undo it.
+        await to_thread.run_sync(cluster.annotate, namespace, {
+            state.ANN_DELETE: state.iso(state.now_utc()), state.ANN_PHASE: "Deleting", state.ANN_REASON: "Deleting",
+        })
         self.wake()
         out = store_out(existing, self.settings)
         out.update(phase="Deleting", reason="Deleting")

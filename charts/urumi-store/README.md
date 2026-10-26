@@ -16,8 +16,13 @@ browser. `helm upgrade --install` alone produces a store that takes orders.
 ## The setup Job
 
 Helm runs the Job after every install and upgrade (a `post-install,post-upgrade`
-hook). It uses the official WP-CLI image, mounts the same WordPress volume as
-the store, and runs `files/store-setup.sh`:
+hook). Stores the provisioner makes set `storeSetup.hook: false`
+(`values-tenant.yaml`): there the Job is an ordinary part of the release, and
+the provisioner watches it. A Job like that which runs out of attempts stays
+failed, and a plain `helm upgrade` would leave it so, so the provisioner's
+Retry deletes the failed Job first and then upgrades, which creates a fresh
+one. The Job uses the official WP-CLI image, mounts the same WordPress volume
+as the store, and runs `files/store-setup.sh`:
 
 1. Wait for the WordPress files and the database.
 2. Install WordPress if it is not installed yet, with a throwaway admin

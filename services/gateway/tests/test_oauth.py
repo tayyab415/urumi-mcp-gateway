@@ -26,6 +26,7 @@ from mcp import Client
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl
 from sqlalchemy import func, select, update
 
@@ -272,7 +273,8 @@ async def test_browser_sign_in_with_the_sdk_client(tmp_path):
             # His role still limits him: the write tool is not offered and not allowed.
             assert {t.name for t in (await bob.list_tools()).tools} == {"alpha__list_products"}
             assert "ball" in str((await bob.call_tool("alpha__list_products", {})).structured_content)
-            assert (await bob.call_tool("alpha__create_thing", {"name": "x"})).is_error
+            with pytest.raises(MCPError, match="Unknown tool"):
+                await bob.call_tool("alpha__create_thing", {"name": "x"})
 
             # --- the audit log says which app acted
             events = (await st.admin.get("/api/audit", params={"limit": 50})).json()

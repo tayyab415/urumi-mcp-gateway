@@ -28,6 +28,7 @@ import styles from "./Audit.module.css";
 const OUTCOMES = [
   { value: "", label: "All outcomes" }, { value: "ok", label: "Success" }, { value: "denied", label: "Refused (role)" }, { value: "disabled", label: "Refused (disabled)" },
   { value: "unknown_tool", label: "Refused (unknown tool)" }, { value: "unreachable", label: "Unreachable" }, { value: "timeout", label: "Timed out" }, { value: "auth_failed", label: "Credential rejected" }, { value: "tool_error", label: "Tool error" },
+  { value: "interrupted", label: "Interrupted (outcome unknown)" },
 ];
 
 /** The step log at page scale: a table people sort and filter, with new records streaming in at the top. */
@@ -78,15 +79,22 @@ export function AuditPage() {
   useEffect(() => { void load(); }, [load]);
 
   // Live: ask only for rows newer than the newest one we have, and mark them so they enter with a tint.
+  // A call still running has its row already (outcome "pending"), so polling starts just before the
+  // oldest running one shown, and its finished row replaces it in place.
+  const shown = useRef<AuditEvent[]>([]);
+  shown.current = rows;
   const poll = useCallback(async () => {
     if (document.visibilityState !== "visible") return;
     try {
-      const data = await api.audit.list({ ...filters, after_id: newest.current ?? undefined, limit: 50 });
+      const running = shown.current.filter((r) => r.outcome === "pending").map((r) => r.id);
+      const since = running.length ? Math.min(...running) - 1 : newest.current ?? undefined;
+      const data = await api.audit.list({ ...filters, after_id: since, limit: 50 });
       if (data.length === 0) return;
       newest.current = Math.max(newest.current ?? 0, data[0]!.id);
-      setFresh((s) => new Set([...s, ...data.map((d) => d.id)]));
-      setRows((prev) => [...data, ...prev.filter((p) => !data.some((d) => d.id === p.id))]);
-      setTimeout(() => setFresh((s) => { const n = new Set(s); data.forEach((d) => n.delete(d.id)); return n; }), 1500);
+      const added = data.filter((d) => !shown.current.some((r) => r.id === d.id)).map((d) => d.id);
+      setFresh((s) => new Set([...s, ...added]));
+      setRows((prev) => [...data, ...prev.filter((p) => !data.some((d) => d.id === p.id))].sort((a, b) => b.id - a.id));
+      setTimeout(() => setFresh((s) => { const n = new Set(s); added.forEach((id) => n.delete(id)); return n; }), 1500);
     } catch { /* keep the last good list */ }
   }, [filters]);
 
