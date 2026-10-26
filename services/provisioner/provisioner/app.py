@@ -32,6 +32,7 @@ from typing import Annotated, Any
 import anyio
 from anyio import to_thread
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from kubernetes import client
 
@@ -67,6 +68,16 @@ def store_out(ns: client.V1Namespace, settings: Settings) -> dict[str, Any]:
         "ready_at": ann.get(state.ANN_READY_AT),
         "deadline": ann.get(state.ANN_DEADLINE),
     }
+
+
+def caller(request: Request) -> None:
+    """Only the gateway holds this token."""
+    auth = request.headers.get("authorization", "")
+    if not hmac.compare_digest(auth.encode(), f"Bearer {request.app.state.settings.api_token}".encode()):
+        raise HTTPException(401, "Not authorized")
+
+
+Caller = Annotated[None, Depends(caller)]
 
 
 class Provisioner:
@@ -275,13 +286,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             tg.cancel_scope.cancel()
 
     app = FastAPI(title="Urumi store provisioner", lifespan=lifespan, docs_url=None, redoc_url=None)
-
-    def caller(request: Request) -> None:
-        auth = request.headers.get("authorization", "")
-        if not hmac.compare_digest(auth.encode(), f"Bearer {settings.api_token}".encode()):
-            raise HTTPException(401, "Not authorized")
-
-    Caller = Annotated[None, Depends(caller)]
+    app.state.settings = settings
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -307,9 +312,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return store_out(ns, settings)
 
     @app.put("/stores/{slug}")
-    async def put_store(slug: str, body: StoreIn, _: Caller, request: Request) -> Any:
-        from fastapi.responses import JSONResponse
-
+    async def put_store(slug: str, body: StoreIn, _: Caller) -> Any:
         status, out = await prov.create(slug, body)
         return JSONResponse(out, status_code=status)
 

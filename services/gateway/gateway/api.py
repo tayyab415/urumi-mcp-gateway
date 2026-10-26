@@ -28,7 +28,7 @@ from sqlalchemy.orm import selectinload
 
 from gateway import upstreams
 from gateway.config import Settings
-from gateway.core import ROLES, SEPARATOR, Gateway, Identity, public_name
+from gateway.core import ROLES, SEPARATOR, Gateway, Identity, definition_of, has_hidden_characters, pending_review, public_name
 from gateway.db import ApiKey, AuditEvent, Database, Invite, LoginSession, Server, Tool, User, utcnow
 from gateway.security import CredentialBox, hash_password, new_api_key, new_token, sha256_hex, verify_password
 
@@ -121,6 +121,9 @@ class KeyIn(BaseModel):
 def validate_slug(v: str) -> str:
     if not SLUG_RE.match(v) or SEPARATOR in v:
         raise ValueError("lowercase letters, digits and single hyphens, starting with a letter")
+    # gateway__* names the gateway's own search-mode tools; store-* names provisioned stores.
+    if v == "gateway" or v.startswith("store-"):
+        raise ValueError("'gateway' and names starting with 'store-' are reserved")
     return v
 
 
@@ -213,6 +216,11 @@ def tool_out(server: Server, t: Tool) -> dict[str, Any]:
         "allowed_roles": t.allowed_roles,
         "present": t.present,
         "input_schema": t.input_schema,
+        # Tool pinning: held back until an admin approves the current definition.
+        "pending_review": pending_review(t),
+        "hidden_characters": has_hidden_characters(t.description) or has_hidden_characters(t.title),
+        "approved_definition": t.approved_definition,
+        "definition": definition_of(t),
     }
 
 
@@ -454,6 +462,14 @@ def build_router(settings: Settings) -> APIRouter:
 
     # -- servers --------------------------------------------------------------
 
+    async def pending_counts(s: Any) -> dict[int, int]:
+        rows = await s.scalars(select(Tool).where(Tool.present.is_(True)))
+        counts: dict[int, int] = {}
+        for t in rows:
+            if pending_review(t):
+                counts[t.server_id] = counts.get(t.server_id, 0) + 1
+        return counts
+
     async def tool_counts(s: Any) -> dict[int, int]:
         rows = await s.execute(select(Tool.server_id, func.count()).where(Tool.present.is_(True)).group_by(Tool.server_id))
         return {k: v for k, v in rows.all()}
@@ -461,8 +477,9 @@ def build_router(settings: Settings) -> APIRouter:
     @r.get("/servers")
     async def list_servers(_: CurrentUser, request: Request) -> list[dict[str, Any]]:
         async with request.app.state.db.session() as s:
-            counts = await tool_counts(s)
-            return [server_out(x, counts.get(x.id, 0)) for x in await s.scalars(select(Server).order_by(Server.slug))]
+            counts, pending = await tool_counts(s), await pending_counts(s)
+            return [{**server_out(x, counts.get(x.id, 0)), "pending_tools": pending.get(x.id, 0)}
+                    for x in await s.scalars(select(Server).order_by(Server.slug))]
 
     @r.post("/servers", status_code=201)
     async def create_server(body: ServerIn, _: AdminUser, request: Request) -> dict[str, Any]:
@@ -555,6 +572,18 @@ def build_router(settings: Settings) -> APIRouter:
             if server is None or tool is None:
                 raise HTTPException(404, "No such tool")
             tool.allowed_roles = [role for role in ROLES if role in body.allowed_roles]
+            await s.commit()
+            return tool_out(server, tool)
+
+    @r.post("/servers/{server_id}/tools/{tool_name}/approve")
+    async def approve_tool(server_id: int, tool_name: str, _: AdminUser, request: Request) -> dict[str, Any]:
+        """Accept a tool's current definition: it is shown and callable again."""
+        async with request.app.state.db.session() as s:
+            server = await s.get(Server, server_id)
+            tool = await s.scalar(select(Tool).where(Tool.server_id == server_id, Tool.name == tool_name))
+            if server is None or tool is None:
+                raise HTTPException(404, "No such tool")
+            tool.approved_hash, tool.approved_definition = tool.definition_hash, definition_of(tool)
             await s.commit()
             return tool_out(server, tool)
 

@@ -13,7 +13,9 @@ before the revocation.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import timedelta
+from urllib.parse import parse_qs
 from typing import Any
 
 import mcp_types as types
@@ -24,6 +26,7 @@ from mcp.shared.exceptions import MCPError
 from sqlalchemy import select
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from gateway import toolsearch
 from gateway.core import Gateway, Identity
 from gateway.db import ApiKey, Database, LoginSession, User, utcnow
 from gateway.security import ChatTokens, sha256_hex
@@ -48,10 +51,20 @@ def build_server(gateway: Gateway) -> Server:
         return who
 
     async def list_tools(ctx: Any, params: types.PaginatedRequestParams | None) -> types.ListToolsResult:
-        return types.ListToolsResult(tools=await gateway.list_tools(identity(ctx)))
+        who = identity(ctx)
+        if who.tool_mode == "search":
+            return types.ListToolsResult(tools=await toolsearch.meta_tools(gateway, who))
+        return types.ListToolsResult(tools=await gateway.list_tools(who))
 
     async def call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
-        return await gateway.call_tool(identity(ctx), params.name, params.arguments)
+        who = identity(ctx)
+        # The two search-mode tools answer in either mode, so a client that cached
+        # them keeps working; they are only *listed* in search mode.
+        if params.name == toolsearch.SEARCH:
+            return await toolsearch.search(gateway, who, params.arguments or {})
+        if params.name == toolsearch.CALL:
+            return await toolsearch.call(gateway, who, params.arguments or {})
+        return await gateway.call_tool(who, params.name, params.arguments)
 
     return Server(
         "urumi-gateway",
@@ -132,6 +145,12 @@ def _key_from(scope: Scope) -> str | None:
     return headers.get("x-api-key") or None
 
 
+def _wants_search(scope: Scope) -> bool:
+    """`/mcp?tools=search` or `X-Urumi-Tools: search` turns on search mode for this connection."""
+    query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+    return "search" in query.get("tools", []) or (_header(scope, b"x-urumi-tools") or "").lower() == "search"
+
+
 class ApiKeyAuth:
     """Accepts a user's API key (external clients) or a chat token (dashboard chat)."""
 
@@ -163,6 +182,8 @@ class ApiKeyAuth:
             })
             await send({"type": "http.response.body", "body": body})
             return
+        if _wants_search(scope):
+            who = replace(who, tool_mode="search")
         scope.setdefault("state", {})["identity"] = who
         await self.app(scope, receive, send)
 

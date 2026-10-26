@@ -133,6 +133,13 @@ class Tool(Base):
     allowed_roles: Mapped[list[str]] = mapped_column(JSON)
     # False when the upstream stopped advertising it. Kept so the admin's rule survives.
     present: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Tool pinning. definition_hash covers everything the model is shown (title,
+    # description, schemas, hints). approved_hash is the one an admin accepted.
+    # While they differ, the tool is held back from everyone: an upstream cannot
+    # quietly rewrite a description after it was reviewed.
+    definition_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_definition: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     server: Mapped[Server] = relationship(back_populates="tools")

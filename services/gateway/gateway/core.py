@@ -15,6 +15,7 @@ unambiguously, and two upstreams that both offer `list_products` stay distinct.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -52,6 +53,8 @@ class Identity:
     api_key_prefix: str | None = None
     chat_id: str | None = None
     name: str = ""
+    # "search": tools/list returns the two search-mode tools (toolsearch.py) instead of every tool.
+    tool_mode: Literal["all", "search"] = "all"
 
 
 def public_name(slug: str, tool: str) -> str:
@@ -61,6 +64,37 @@ def public_name(slug: str, tool: str) -> str:
 def split_name(name: str) -> tuple[str, str] | None:
     slug, sep, tool = name.partition(SEPARATOR)
     return (slug, tool) if sep and slug and tool else None
+
+
+# Characters a person cannot see but a model reads: Unicode "tag" characters,
+# zero-width characters and bidirectional overrides. A tool description is the
+# upstream's text going straight into the model's context, so these are stripped
+# before any model sees it, and their presence holds the tool for review.
+_HIDDEN = re.compile("[\U000E0000-\U000E007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]")
+MAX_DESCRIPTION = 1500
+
+
+def clean_description(text: str) -> str:
+    text = _HIDDEN.sub("", text or "").strip()
+    return text if len(text) <= MAX_DESCRIPTION else text[: MAX_DESCRIPTION - 1] + "…"
+
+
+def has_hidden_characters(text: str | None) -> bool:
+    return bool(text and _HIDDEN.search(text))
+
+
+def definition_of(row: Tool) -> dict[str, Any]:
+    """What a model is shown for a tool. Any change to it needs an admin's review."""
+    return {"title": row.title, "description": row.description, "input_schema": row.input_schema,
+            "output_schema": row.output_schema, "annotations": row.annotations}
+
+
+def definition_hash(definition: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(definition, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def pending_review(row: Tool) -> bool:
+    return row.definition_hash is not None and row.definition_hash != row.approved_hash
 
 
 def default_roles(annotations: types.ToolAnnotations | None) -> list[str]:
@@ -131,14 +165,18 @@ class Gateway:
                 server.last_error = failure_.message
             else:
                 assert found is not None
+                # Trust on first use: what a server offers when an admin first connects it
+                # (or what the platform's own store servers offer) counts as reviewed.
+                # Anything that changes or appears after that waits for an admin.
+                trust_new = server.last_ok_at is None or server.managed_by is not None
                 server.status, server.last_error, server.last_ok_at = "ok", None, now
                 server.latency_ms, server.protocol_version = found.latency_ms, found.protocol_version
-                self._merge_tools(server, found.tools)
+                self._merge_tools(server, found.tools, trust_new)
             await s.commit()
             return server
 
     @staticmethod
-    def _merge_tools(server: Server, discovered: list[types.Tool]) -> None:
+    def _merge_tools(server: Server, discovered: list[types.Tool], trust_new: bool = True) -> None:
         existing = {t.name: t for t in server.tools}
         seen: set[str] = set()
         for tool in discovered:
@@ -151,12 +189,20 @@ class Gateway:
             if row is None:
                 row = Tool(name=tool.name, allowed_roles=default_roles(tool.annotations))
                 server.tools.append(row)
+            legacy = row.id is not None and row.definition_hash is None  # stored before pinning existed
             row.title = tool.title
             row.description = tool.description or ""
             row.input_schema = tool.input_schema
             row.output_schema = tool.output_schema
             row.annotations = annotations
             row.present = True
+            definition = definition_of(row)
+            row.definition_hash = definition_hash(definition)
+            hidden = has_hidden_characters(row.description) or has_hidden_characters(row.title)
+            if row.approved_hash is None and (legacy or trust_new) and not hidden:
+                row.approved_hash, row.approved_definition = row.definition_hash, definition
+            elif row.definition_hash != row.approved_hash:
+                log.warning("%s/%s: definition differs from the approved one; held for review", server.slug, tool.name)
         for name, row in existing.items():
             if name not in seen:
                 row.present = False
@@ -186,7 +232,7 @@ class Gateway:
                 .where(Server.enabled.is_(True), Tool.present.is_(True))
                 .order_by(Server.slug, Tool.name)
             )
-            return [(server, tool) for server, tool in rows.all() if who.role in tool.allowed_roles]
+            return [(server, tool) for server, tool in rows.all() if who.role in tool.allowed_roles and not pending_review(tool)]
 
     async def list_tools(self, who: Identity) -> list[types.Tool]:
         result = []
@@ -195,8 +241,8 @@ class Gateway:
             result.append(
                 types.Tool(
                     name=public_name(server.slug, tool.name),
-                    title=f"{server.name}: {tool.title or tool.name}",
-                    description=f"[{server.name}] {tool.description}".strip(),
+                    title=f"{server.name}: {clean_description(tool.title or tool.name)}",
+                    description=f"[{server.name}] {clean_description(tool.description)}".strip(),
                     input_schema=tool.input_schema,
                     output_schema=tool.output_schema,
                     annotations=annotations,
@@ -256,6 +302,10 @@ class Gateway:
             return finish("unknown_tool", _error(f"Unknown tool {name!r}."), "not in catalog")
         if not server.enabled:
             return finish("disabled", _error(f"The {server.name} server is disabled by an admin."), "server disabled")
+        if pending_review(tool):
+            return finish("pending_review", _error(
+                f"{name} is held back: the {server.name} server changed what this tool says it does, or added it, "
+                "after an admin last reviewed it. An admin can review and approve it on the Servers page."), "definition not approved")
         if who.role not in tool.allowed_roles:
             return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
 
