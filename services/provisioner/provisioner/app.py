@@ -148,7 +148,11 @@ class Provisioner:
         In the moment between that read and the write, the delete annotation
         still wins (state.phase_of).
         """
-        current = await to_thread.run_sync(cluster.read_namespace, namespace)
+        try:
+            current = await to_thread.run_sync(cluster.read_namespace, namespace)
+        except Exception:  # noqa: BLE001 - like _annotate: the next pass works it out again
+            log.exception("could not re-read %s before recording this pass", namespace)
+            return
         if current is None or state.phase_of(current.metadata.annotations or {}, terminating(current)) == "Deleting":
             log.info("%s was deleted during this reconcile pass; not recording %s", namespace, values.get(state.ANN_PHASE, "its reason"))
             return

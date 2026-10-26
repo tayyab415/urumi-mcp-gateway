@@ -494,6 +494,10 @@ def _json_size(model: Any) -> int:
     return len(model.model_dump_json(by_alias=True, exclude_none=True))
 
 
+def _plain_json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
 _EMPTY_TEXT_SIZE = _json_size(types.TextContent(type="text", text="")) + 1  # the block, and a comma
 _CAP_RESERVE = 1_000  # for the result's own fields and the gateway's note
 _PART_NAMES = {"text": "text", "image": "an image", "audio": "audio", "resource": "an embedded resource",
@@ -545,14 +549,14 @@ def _capped(result: types.CallToolResult, has_output_schema: bool = False) -> ty
             left_out.append(_PART_NAMES.get(part.type, part.type))
     structured = result.structured_content
     if structured is not None:
-        cost = len(json.dumps(structured, ensure_ascii=False, default=str)) + len('"structuredContent":,')
+        cost = _plain_json_size(structured) + len('"structuredContent":,')
         if cost <= room:
             room -= cost
         else:
             structured = None
             left_out.append("the structured content")
     meta = result.meta
-    if meta and len(json.dumps(meta, ensure_ascii=False, default=str)) + len('"_meta":,') > room:
+    if meta and _plain_json_size(meta) + len('"_meta":,') > room:
         meta = None
         left_out.append("the metadata")
     content.append(types.TextContent(type="text", text=(
