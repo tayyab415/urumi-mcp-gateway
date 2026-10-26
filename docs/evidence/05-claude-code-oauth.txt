@@ -1,0 +1,8 @@
+### Latest audit rows: Claude Code signed in with OAuth (browser login as Bob), headless prompt
+2026-10-26T02:30:34  bob@urumi.test   via=mcp  key=oauth:Claude Code (urumi) woo__list_orders           ok
+2026-10-26T02:30:34  bob@urumi.test   via=mcp  key=oauth:Claude Code (urumi) supplier__list_products    ok
+### Connected apps (OAuth grants), all users
+{'id': 1, 'client_id': 'eb93a280-3888-4e95-adf2-9cecbd82e5d9', 'client_name': 'Claude Code (urumi)', 'user_email': 'bob@urumi.test', 'created_at': '2026-10-26T02:25:48.922419Z', 'last_used_at': '2026-10-26T02:30:26.432120Z'}
+### Admin disconnects Claude Code for Bob: 200 {'ok': True}
+### Claude Code's status right after
+  Status: ! Needs authentication

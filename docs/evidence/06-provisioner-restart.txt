@@ -1,0 +1,10 @@
+[5s] Starting
+[11s] Waiting for: mariadb; wordpress; store-setup; woo-mcp
+[11s] killing the provisioner Pod mid-provisioning
+pod "urumi-provisioner-65ff4cfc56-6blfx" deleted from urumi-app namespace
+[24s] Provisioning|Waiting for: mariadb; wordpress; store-setup; woo-mcp
+[55s] Provisioning|Waiting for: wordpress; store-setup
+[64s] Provisioning|Waiting for: store-setup
+[84s] Ready|
+### provisioner log after the restart:
+2026-10-26 02:33:38,589 INFO provisioner: store west-sports is ready

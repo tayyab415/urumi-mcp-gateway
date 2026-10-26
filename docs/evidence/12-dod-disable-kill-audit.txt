@@ -1,0 +1,27 @@
+### Admin disabled Shipping on the Servers page
+--- Bob's external client (MCP tools/list):
+[bob@urumi.test] 13 tools: slack__channel_info, slack__read_messages, store-south__get_order, store-south__list_orders, store-south__list_products, store-west-sports__get_order, store-west-sports__list_orders, store-west-sports__list_products, supplier__list_products, supplier__quote_restock, woo__get_order, woo__list_orders, woo__list_products
+--- Bob calls a shipping tool his client remembered:
+[bob@urumi.test] shipping__quote_shipping -> ERROR: The Shipping (simulated) server is disabled by an admin.
+
+### Chat (admin) asked for a shipping quote while Shipping was disabled: it said it has no shipping tools
+### Admin re-enables Shipping
+shipping: ok
+
+### Kill the supplier Pod at 02:41:07
+pod "urumi-supplier-79f8b474c-jmkpk" deleted from urumi-app namespace
+--- [02:41:12] Bob calls supplier, then woo, then shipping:
+[bob@urumi.test] supplier__list_products -> ERROR: supplier is unreachable (ConnectError). The request was not delivered.
+[bob@urumi.test] woo__list_orders -> ok: { "orders": [ { "id": 47, "number": "47", "status": "processing", "da
+[bob@urumi.test] shipping__list_carriers -> ok: { "origin_country": "IN", "zones": { "domestic": [ "IndiaPost 
+    dashboard says supplier: ('down', 'supplier is unreachable (ConnectError). The request was not delivered.')
+--- [02:41:27] Bob calls supplier, then woo, then shipping:
+[bob@urumi.test] supplier__list_products -> ok: { "sku": "SUP-BALL-5", "name": "Training Ball (size 5)", "unit_cost": "11.50", "currency": "INR", "available": 400, "min_o
+[bob@urumi.test] woo__list_orders -> ok: { "orders": [ { "id": 47, "number": "47", "status": "processing", "da
+[bob@urumi.test] shipping__list_carriers -> ok: { "origin_country": "IN", "zones": { "domestic": [ "IndiaPost 
+    dashboard says supplier: ('ok', '')
+--- [02:41:38] Bob calls supplier, then woo, then shipping:
+[bob@urumi.test] supplier__list_products -> ok: { "sku": "SUP-BALL-5", "name": "Training Ball (size 5)", "unit_cost": "11.50", "currency": "INR", "available": 400, "min_o
+[bob@urumi.test] woo__list_orders -> ok: { "orders": [ { "id": 47, "number": "47", "status": "processing", "da
+[bob@urumi.test] shipping__list_carriers -> ok: { "origin_country": "IN", "zones": { "domestic": [ "IndiaPost 
+    dashboard says supplier: ('ok', '')

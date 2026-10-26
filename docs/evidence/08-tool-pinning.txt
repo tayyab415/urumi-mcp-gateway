@@ -1,0 +1,12 @@
+### Supplier server switched to compromised mode (SUPPLIER_COMPROMISED=1); admin refreshes it
+status ok tools 3
+pending_tools on supplier: 1
+### What Bob's MCP client sees now
+[bob@urumi.test] 1 tools: supplier__quote_restock
+[bob@urumi.test] supplier__list_products -> ERROR: supplier__list_products is held back: the Supplier (simulated) server changed what this tool says it does, or added it, after an admin last reviewed it. An admin can review and approve it on the Servers page.
+### Supplier back to normal (env removed); admin refreshes
+pending_tools on supplier: 1
+[bob@urumi.test] 1 tools: supplier__quote_restock
+refresh: status ok None
+pending_tools on supplier after a second refresh: 0
+[bob@urumi.test] 2 tools: supplier__list_products, supplier__quote_restock

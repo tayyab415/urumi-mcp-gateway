@@ -1,0 +1,32 @@
+### User B (Bob): Claude Code with only the gateway URL and his own API key
+$ claude -p "<prompt>" --mcp-config <gateway URL + Bob API key> --strict-mcp-config
+
+--- Prompt 1: which tools can you see, and what orders came in today?
+
+- shipping: list_carriers, quote_shipping
+- slack: channel_info, read_messages
+- store-south: get_order, list_orders, list_products
+- store-west-sports: get_order, list_orders, list_products
+- supplier: list_products, quote_restock
+- woo: get_order, list_orders, list_products
+
+The gateway only shows the tools my role is allowed to use, so the server may have others I can't see.
+
+**Today's woo orders (2026-10-26, UTC), 2 total:**
+
+- #47: processing, Meera Iyer, 1× Urumi Kit Bag, ₹799.00, shipping to Bengaluru, KA 560001
+- #45: processing, Meera Iyer, 1× Nike Strike Football (Size 5), ₹1,995.00, shipping to Bengaluru, KA 560001
+
+--- Prompt 2: one prompt that needs two upstream servers
+Order 47 is for Meera Iyer: one Urumi Kit Bag, ₹799, cash on delivery, status "processing", shipping to Bengaluru, KA 560001, India.
+Shipping quotes for a 1 kg parcel (simulated): IndiaPost Speed Post ₹90 in 4 days, Delhivery Surface ₹105 in 3 days, BlueDart Express ₹240 in 1 day. The quote tool takes country and postcode, not city, so I used IN and 560001.
+Tools called: `woo__get_order`, then `shipping__quote_shipping`. They ran one after the other because the quote needed the address from the order.
+
+### Revoke Bob's key (as Bob, on the Connect page's API: DELETE /api/keys/11)
+revoke: {'ok': True}
+--- Bob's next call with the revoked key
+
+The error: **AUTH_HEADER_REJECTED**, HTTP 401: "Invalid or revoked API key."
+
+The server is configured with an `Authorization` header, and the endpoint rejected that token. Because the header is set, it won't fall back to OAuth. To fix it, put a valid API key in the urumi-bob server config, restart or reconnect the server, and I'll run the call again.
+--- Raw HTTP check with the revoked key: 401 {"jsonrpc": "2.0", "id": null, "error": {"code": -32010, "message": "Invalid or revoked API key"}}
