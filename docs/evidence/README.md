@@ -2,8 +2,7 @@
 
 Screen recordings (`.mp4`, not in git because of size) and terminal captures
 (`.txt`) from the session that finished the assignment. Each file says what
-it proves. The facts behind every number are in
-[../video-facts.md](../video-facts.md).
+it proves.
 
 | File | What it shows |
 |---|---|

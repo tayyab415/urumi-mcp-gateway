@@ -20,7 +20,7 @@ remains on `t3-agent-1`. Stopping the application VM does not stop T3.
 
 ## Everyday controls
 
-Run these commands in `/home/tayyabkhan/urumi-learning` on the coding workspace:
+Run these commands from the repo root on the coding workspace:
 
 ```bash
 bash scripts/gcp-vm.sh status

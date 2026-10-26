@@ -144,7 +144,6 @@ where to look.
 | `dashboard` | React + TypeScript dashboard |
 | `charts/urumi-store`, `charts/urumi-app` | The two Helm charts |
 | `infra/gcp`, `infra/cluster`, `scripts/gcp-vm.sh` | The VM, the cluster add-ons and the commands that run them |
-| `console`, `lessons`, `labs`, `video` | Learning material made while building this; not part of the system |
 
 ## Run it
 

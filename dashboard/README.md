@@ -1,6 +1,6 @@
 # Urumi dashboard
 
-The React dashboard for the team MCP gateway: servers, team and keys, audit log, permissions, chat with a human-in-the-loop approval gate, and a page-aware assistant beside every page. The look and motion follow [`intended_design.md`](../intended_design.md) (the Arc Library dark theme and springs, measured from the two reference clips). Screenshots and a recording of the run card are in [`docs/dashboard/`](../docs/dashboard/README.md).
+The React dashboard for the team MCP gateway: servers, team and keys, audit log, permissions, chat with a human-in-the-loop approval gate, and a page-aware assistant beside every page. The look and motion follow the Arc Library dark theme and springs (see `src/arc/`).
 
 ## Run it locally
 

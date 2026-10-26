@@ -104,7 +104,7 @@ Member called unreviewed late tool: isError False
 
 A separately tested manually registered server correctly hid its late tool: [gateway-reproductions.txt](proof/gateway-reproductions.txt).
 
-**Impact:** a compromised store MCP server can introduce a new description and operation into its owner's tool list without review, and can obtain member access by claiming `readOnlyHint`. Existing changed definitions still get held; this bug concerns **new** tools on managed servers. It contradicts the unqualified “or a new tool” pinning claim in `docs/video-facts.md` and `docs/threat-model.md:145–152`.
+**Impact:** a compromised store MCP server can introduce a new description and operation into its owner's tool list without review, and can obtain member access by claiming `readOnlyHint`. Existing changed definitions still get held; this bug concerns **new** tools on managed servers. It contradicts the unqualified “or a new tool” pinning claim in the project's verified-facts list and `docs/threat-model.md:145–152`.
 
 **Fix:** trust initial discovery once, including for managed stores, then hold all later additions. Provisioning should explicitly approve the known initial WooCommerce catalog rather than granting permanent trust to whatever the server adds.
 
@@ -494,7 +494,7 @@ Both store chart values linted/rendered. The app chart intentionally requires re
 
 The existing suites do not cover the managed-store late-tool exception, non-text cap, durable crash logging, failed setup Job retry, deletion race or header-normalization rate bypass. Passing them does not disprove these reproductions.
 
-## Checked claims from `docs/video-facts.md`
+## Checked claims from the project's verified-facts list
 
 Truth labels below apply to the stated scope. Historical timing, old instance counts and exact old order IDs are not claimed to have been recreated.
 
