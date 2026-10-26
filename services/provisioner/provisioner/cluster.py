@@ -44,6 +44,17 @@ def _core() -> client.CoreV1Api:
     return client.CoreV1Api()
 
 
+def short_error(exc: BaseException) -> str:
+    """One line a person can read: the API server's own message, not the whole HTTP dump."""
+    if isinstance(exc, ApiException):
+        try:
+            message = json.loads(exc.body or "{}").get("message")
+        except ValueError:
+            message = None
+        return f"Kubernetes API {exc.status}: {message or exc.reason}"[:300]
+    return f"{exc.__class__.__name__}: {exc}"[:300]
+
+
 def _missing(exc: ApiException) -> bool:
     return exc.status == 404
 
@@ -173,7 +184,7 @@ def _pod_problems(namespace: str) -> dict[str, str]:
 
 def _deployment_ready(namespace: str, name: str) -> tuple[bool, str | None]:
     try:
-        d = client.AppsV1Api().read_namespaced_deployment_status(name, namespace)
+        d = client.AppsV1Api().read_namespaced_deployment(name, namespace)
     except ApiException as exc:
         if _missing(exc):
             return False, None
@@ -189,7 +200,7 @@ def observe(namespace: str, release: str) -> state.Observed:
     problems = _pod_problems(namespace)
 
     try:
-        sts = client.AppsV1Api().read_namespaced_stateful_set_status(f"{release}-mariadb", namespace)
+        sts = client.AppsV1Api().read_namespaced_stateful_set(f"{release}-mariadb", namespace)
         seen.database_ready = bool(sts.status.ready_replicas)
     except ApiException as exc:
         if not _missing(exc):
@@ -198,7 +209,7 @@ def observe(namespace: str, release: str) -> state.Observed:
     seen.mcp_ready, mcp_problem = _deployment_ready(namespace, f"{release}-woo-mcp")
 
     try:
-        job = client.BatchV1Api().read_namespaced_job_status(f"{release}-store-setup", namespace)
+        job = client.BatchV1Api().read_namespaced_job(f"{release}-store-setup", namespace)
         seen.setup_done = bool(job.status.succeeded)
         for cond in job.status.conditions or []:
             if cond.type == "Failed" and cond.status == "True":

@@ -15,11 +15,13 @@ sorted into kinds the rest of the gateway can explain to a person or a model:
 
 from __future__ import annotations
 
+import ipaddress
 import ssl
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
+from urllib.parse import urlsplit
 
 import anyio
 import httpx2
@@ -40,6 +42,48 @@ CLIENT_INFO = types.Implementation(name="urumi-gateway", version="0.1.0")
 _TLS = ssl.create_default_context()
 
 
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")  # also Alibaba Cloud's metadata address
+_AWS_V6_METADATA = ipaddress.ip_address("fd00:ec2::254")
+
+
+def blocked_address(address: str, allow_loopback: bool) -> str | None:
+    """Why the gateway must not connect to this IP, or None.
+
+    Cluster-internal (RFC 1918) addresses are allowed on purpose: the MCP servers
+    live there. Cloud metadata, link-local, CGNAT, multicast, reserved and,
+    outside local development, loopback are refused. An IPv4 address wrapped in
+    IPv6 (::ffff:169.254.169.254) is unwrapped first.
+    """
+    ip = ipaddress.ip_address(address.split("%")[0])
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        return None if allow_loopback else f"{ip} is loopback"
+    if ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+        return f"{ip} is link-local, multicast or reserved (cloud metadata lives here)"
+    if (ip.version == 4 and ip in _CGNAT) or ip == _AWS_V6_METADATA:
+        return f"{ip} is a cloud metadata or carrier-grade NAT address"
+    return None
+
+
+async def check_target_address(target: Target, allow_loopback: bool) -> None:
+    """Re-resolve the upstream's host right before connecting and refuse blocked addresses.
+
+    The URL was checked when the admin saved it, but DNS answers can change
+    after that. This narrows the window to milliseconds; the gateway's egress
+    NetworkPolicy is the layer that does not depend on timing.
+    """
+    parts = urlsplit(target.url)
+    host = parts.hostname or ""
+    try:
+        infos = await anyio.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
+    except OSError:
+        return  # the connect itself will fail and be reported as unreachable
+    for info in infos:
+        if reason := blocked_address(info[4][0], allow_loopback):
+            raise UpstreamFailure("unreachable", f"{target.slug}: refused to connect, {host} now resolves to a blocked address ({reason}).")
+
+
 class UpstreamFailure(Exception):
     def __init__(self, kind: FailureKind, message: str):
         super().__init__(message)
@@ -56,6 +100,7 @@ class Target:
     timeout: float
     headers: dict[str, str] = field(default_factory=dict, repr=False)  # holds the credential
     protocol_version: str | None = None
+    allow_loopback: bool = False
 
 
 @dataclass
@@ -105,6 +150,7 @@ async def _exchange(target: Target, work: Callable[[Client], Awaitable[T]]) -> t
 
     try:
         with anyio.fail_after(target.timeout):
+            await check_target_address(target, target.allow_loopback)
             async with httpx2.AsyncClient(
                 headers=target.headers,
                 verify=_TLS,

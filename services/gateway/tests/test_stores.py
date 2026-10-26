@@ -95,6 +95,13 @@ async def test_store_lifecycle_registers_and_removes_tools(tmp_path):
                         result = await client.call_tool("store-north__list_products", {})
                         assert not result.is_error
 
+                        # Only the owner (and admins) see a store's tools; Bob cannot call them either.
+                        bob_key = (await bob.post("/api/keys", json={"name": "cli"})).json()["key"]
+                        async with mcp_client(gw, bob_key) as bob_mcp:
+                            assert not any(t.name.startswith("store-north__") for t in (await bob_mcp.list_tools()).tools)
+                            hidden = await bob_mcp.call_tool("store-north__list_products", {})
+                            assert hidden.is_error and "Unknown tool" in hidden.content[0].text
+
                         listed = (await ana.get("/api/stores")).json()["stores"]
                         assert listed[0]["registered"] and listed[0]["mine"] and listed[0]["can_delete"]
                         assert (await bob.get("/api/stores")).json()["stores"][0]["can_delete"] is False

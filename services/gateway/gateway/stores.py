@@ -100,7 +100,7 @@ async def sync_registrations(db: Database, gateway: Gateway, provisioner: Provis
                 continue
             server = Server(
                 slug=slug, name=f"Store: {store['name']}", url=store["mcp_url"], enabled=True,
-                auth_type="none", timeout_seconds=15, managed_by=MANAGED_BY,
+                auth_type="none", timeout_seconds=15, managed_by=MANAGED_BY, owner_id=store["owner_id"],
             )
             s.add(server)
             await s.flush()

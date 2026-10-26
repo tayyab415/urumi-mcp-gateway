@@ -109,10 +109,19 @@ def default_roles(annotations: types.ToolAnnotations | None) -> list[str]:
     return ["admin"]
 
 
+MAX_RESULT_CHARS = 256_000  # per call; a hostile or buggy upstream must not flood the model's context
+
+
+def may_use_server(server: Server, who: Identity) -> bool:
+    """A provisioned store's tools belong to the person who made it, and to admins."""
+    return server.owner_id is None or who.role == "admin" or server.owner_id == who.user_id
+
+
 class Gateway:
-    def __init__(self, db: Database, box: CredentialBox):
+    def __init__(self, db: Database, box: CredentialBox, allow_loopback: bool = False):
         self.db = db
         self.box = box
+        self.allow_loopback = allow_loopback
         self._refresh_lock = anyio.Lock()
 
     # ------------------------------------------------------------------ targets
@@ -135,6 +144,7 @@ class Gateway:
             timeout=server.timeout_seconds,
             headers=headers,
             protocol_version=server.protocol_version,
+            allow_loopback=self.allow_loopback,
         )
 
     # ---------------------------------------------------------------- discovery
@@ -187,7 +197,9 @@ class Gateway:
             row = existing.get(tool.name)
             annotations = tool.annotations.model_dump(by_alias=True, exclude_none=True) if tool.annotations else None
             if row is None:
-                row = Tool(name=tool.name, allowed_roles=default_roles(tool.annotations))
+                # A tool that appears after the first review starts admin-only, whatever
+                # it claims about itself: approving it must not open it to members as well.
+                row = Tool(name=tool.name, allowed_roles=default_roles(tool.annotations) if trust_new else ["admin"])
                 server.tools.append(row)
             legacy = row.id is not None and row.definition_hash is None  # stored before pinning existed
             row.title = tool.title
@@ -232,7 +244,8 @@ class Gateway:
                 .where(Server.enabled.is_(True), Tool.present.is_(True))
                 .order_by(Server.slug, Tool.name)
             )
-            return [(server, tool) for server, tool in rows.all() if who.role in tool.allowed_roles and not pending_review(tool)]
+            return [(server, tool) for server, tool in rows.all()
+                    if who.role in tool.allowed_roles and not pending_review(tool) and may_use_server(server, who)]
 
     async def list_tools(self, who: Identity) -> list[types.Tool]:
         result = []
@@ -298,7 +311,7 @@ class Gateway:
             if server is not None:
                 tool = await s.scalar(select(Tool).where(Tool.server_id == server.id, Tool.name == tool_name))
 
-        if server is None or tool is None or not tool.present:
+        if server is None or tool is None or not tool.present or not may_use_server(server, who):
             return finish("unknown_tool", _error(f"Unknown tool {name!r}."), "not in catalog")
         if not server.enabled:
             return finish("disabled", _error(f"The {server.name} server is disabled by an admin."), "server disabled")
@@ -323,6 +336,7 @@ class Gateway:
             return finish(failure.kind, _error(message), failure.message)
 
         await self._note_health(server.id, None)
+        result = _capped(result)
         if result.is_error:
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text=tidy_error_text(c.text)) if isinstance(c, types.TextContent) else c for c in result.content],
@@ -379,6 +393,26 @@ def tidy_error_text(text: str) -> str:
     if not problems:
         return text
     return f"Invalid arguments for {m.group(1)}. " + "; ".join(problems) + "."
+
+
+def _capped(result: types.CallToolResult) -> types.CallToolResult:
+    """Cut text content past MAX_RESULT_CHARS, and say so, instead of passing it all to the model."""
+    total, content, cut = 0, [], False
+    for c in result.content:
+        if isinstance(c, types.TextContent):
+            room = MAX_RESULT_CHARS - total
+            if len(c.text) > room:
+                c = types.TextContent(type="text", text=c.text[: max(room, 0)])
+                cut = True
+            total += len(c.text)
+        content.append(c)
+        if cut:
+            break
+    if not cut:
+        return result
+    content.append(types.TextContent(type="text", text=f"[gateway: result truncated at {MAX_RESULT_CHARS} characters]"))
+    structured = result.structured_content if len(json.dumps(result.structured_content or {}, default=str)) <= MAX_RESULT_CHARS else None
+    return types.CallToolResult(content=content, is_error=result.is_error, structured_content=structured)
 
 
 def _error(message: str) -> types.CallToolResult:

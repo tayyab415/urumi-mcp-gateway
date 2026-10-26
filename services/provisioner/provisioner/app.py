@@ -117,7 +117,7 @@ class Provisioner:
             await self.reconcile(ns, slug)
         except Exception as exc:  # noqa: BLE001 - one store's trouble must not stop the others
             log.exception("reconcile %s failed", slug)
-            await self._annotate(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {exc.__class__.__name__}: {str(exc)[:200]}"})
+            await self._annotate(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {cluster.short_error(exc)}"})
         finally:
             self.busy.discard(slug)
 

@@ -101,6 +101,8 @@ class Server(Base):
     # "provisioner" for a store's MCP server that the gateway registered by itself;
     # it is removed with its store. None for servers an admin added.
     managed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # A provisioned store's server is visible to the store's owner and to admins only.
+    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Health, as last observed by discovery or a call.
     status: Mapped[str] = mapped_column(String(16), default="unknown")  # unknown | ok | down | auth_failed
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

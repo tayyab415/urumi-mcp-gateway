@@ -99,9 +99,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.getLogger("httpx2").setLevel(logging.WARNING)  # it logs every upstream URL
 
     db = Database(settings.database_url)
-    gateway = Gateway(db, CredentialBox(settings.secret_key))
+    gateway = Gateway(db, CredentialBox(settings.secret_key), allow_loopback=settings.allow_loopback_upstreams)
     chat_tokens = ChatTokens(settings.secret_key)
-    mcp_app, mcp_manager = mcp_asgi_app(gateway, db, chat_tokens)
+    mcp_app, mcp_manager = mcp_asgi_app(gateway, db, chat_tokens, settings.mcp_allowed_hosts(), settings.mcp_allowed_origins())
     provisioner = (
         stores.Provisioner(settings.provisioner_url, settings.provisioner_token)
         if settings.provisioner_url and settings.provisioner_token else None
@@ -127,8 +127,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.chat_tokens = chat_tokens
     app.state.provisioner = provisioner
 
-    app.add_route("/mcp", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
-    app.add_route("/mcp/", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
+    # POST only. The gateway is stateless and never pushes messages, so a GET
+    # (the server-to-client stream) would just hang open; the spec says to answer
+    # 405 instead. /mcp/search is the same endpoint in search mode (toolsearch.py).
+    for path in ("/mcp", "/mcp/", "/mcp/search"):
+        app.add_route(path, mcp_app, methods=["POST"], include_in_schema=False)
     api.install(app, settings)
     app.include_router(stores.build_router())
 

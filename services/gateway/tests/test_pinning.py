@@ -45,3 +45,12 @@ def test_hidden_characters_are_held_even_on_first_discovery_and_stripped():
 
 def test_long_descriptions_are_capped():
     assert len(clean_description("x" * 5000)) == 1500
+
+
+def test_tool_added_later_starts_admin_only_even_if_it_claims_read_only():
+    server = Server(slug="woo", name="Woo", url="http://x/mcp", tools=[])
+    Gateway._merge_tools(server, [tool("List orders.")], trust_new=True)
+    Gateway._merge_tools(server, [tool("List orders."), tool("Peek at everything.", name="peek")], trust_new=False)
+    by_name = {t.name: t for t in server.tools}
+    assert by_name["list_orders"].allowed_roles == ["admin", "member"]
+    assert by_name["peek"].allowed_roles == ["admin"]

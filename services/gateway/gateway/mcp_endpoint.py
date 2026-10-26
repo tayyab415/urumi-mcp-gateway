@@ -32,10 +32,11 @@ from gateway.db import ApiKey, Database, LoginSession, User, utcnow
 from gateway.security import ChatTokens, sha256_hex
 
 # JSON-RPC error code for "no valid credential", sent with HTTP 401. JSON-RPC
-# leaves -32000 to -32099 to servers, and the MCP SDK already uses some of them:
-# -32001 is its "request timed out". A client that read our 401 as a timeout
-# would report "the call may have run" when it was refused, so ours is distinct.
-NOT_AUTHENTICATED = -32030
+# leaves -32000 to -32099 to servers, the MCP SDK uses -32001 for "request timed
+# out", and the 2026-07-28 MCP spec reserves -32020 to -32099 for itself. A client
+# that read our 401 as a timeout would report "the call may have run" when it was
+# refused, so ours sits in the gap: -32010.
+NOT_AUTHENTICATED = -32010
 
 INSTRUCTIONS = (
     "Urumi team gateway. Tools from several connected servers, named <server>__<tool>. "
@@ -76,16 +77,21 @@ def build_server(gateway: Gateway) -> Server:
     )
 
 
-def session_manager(server: Server) -> StreamableHTTPSessionManager:
+def session_manager(server: Server, allowed_hosts: list[str], allowed_origins: list[str]) -> StreamableHTTPSessionManager:
     # Stateless: each POST stands alone, so there is no per-connection state to
     # outlive a revocation, and a restarted gateway Pod loses nothing.
-    # DNS-rebinding protection is for browser-reachable localhost servers. This
-    # endpoint accepts only API keys in headers, which a hostile page cannot read.
+    # Host and Origin are checked, as the spec requires: a request whose Host is
+    # not one of ours gets 421, and one from a browser page on another site gets
+    # 403. Requests with no Origin (Claude Code, Cursor, curl) are unaffected.
     return StreamableHTTPSessionManager(
         app=server,
         stateless=True,
         json_response=True,
-        security_settings=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        security_settings=TransportSecuritySettings(
+            enable_dns_rebinding_protection=bool(allowed_hosts),
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        ),
     )
 
 
@@ -146,7 +152,9 @@ def _key_from(scope: Scope) -> str | None:
 
 
 def _wants_search(scope: Scope) -> bool:
-    """`/mcp?tools=search` or `X-Urumi-Tools: search` turns on search mode for this connection."""
+    """`/mcp/search`, `/mcp?tools=search` or `X-Urumi-Tools: search` turns on search mode for this connection."""
+    if scope.get("path", "").rstrip("/").endswith("/mcp/search"):
+        return True
     query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
     return "search" in query.get("tools", []) or (_header(scope, b"x-urumi-tools") or "").lower() == "search"
 
@@ -188,6 +196,9 @@ class ApiKeyAuth:
         await self.app(scope, receive, send)
 
 
-def mcp_asgi_app(gateway: Gateway, db: Database, chat_tokens: ChatTokens) -> tuple[ASGIApp, StreamableHTTPSessionManager]:
-    manager = session_manager(build_server(gateway))
+def mcp_asgi_app(
+    gateway: Gateway, db: Database, chat_tokens: ChatTokens,
+    allowed_hosts: list[str] | None = None, allowed_origins: list[str] | None = None,
+) -> tuple[ASGIApp, StreamableHTTPSessionManager]:
+    manager = session_manager(build_server(gateway), allowed_hosts or [], allowed_origins or [])
     return ApiKeyAuth(StreamableHTTPASGIApp(manager), db, chat_tokens), manager

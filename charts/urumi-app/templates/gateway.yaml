@@ -103,6 +103,10 @@ spec:
             {{- end }}
             - name: PUBLIC_URL
               value: {{ .Values.publicUrl | quote }}
+            # /mcp checks the Host header (DNS-rebinding protection). The public
+            # hostname comes from PUBLIC_URL; chat calls the in-cluster Service name.
+            - name: MCP_ALLOWED_HOSTS
+              value: {{ printf "%s:8080,%s" $name $name | quote }}
             - name: COOKIE_SECURE
               value: {{ .Values.gateway.cookieSecure | quote }}
             - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS

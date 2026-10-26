@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -39,6 +40,19 @@ class Settings:
     provisioner_url: str | None = None
     provisioner_token: str | None = None
     store_sync_interval_seconds: float = 5.0
+    # Host headers /mcp accepts (DNS-rebinding protection). Empty: derived from
+    # PUBLIC_URL plus loopback; MCP_ALLOWED_HOSTS adds more, e.g. the in-cluster
+    # Service name the chat service uses. "*" turns the check off.
+    extra_allowed_hosts: tuple[str, ...] = ()
+
+    def mcp_allowed_hosts(self) -> list[str]:
+        if "*" in self.extra_allowed_hosts:
+            return []
+        host = urlsplit(self.public_url).netloc
+        return [host, f"{host.split(':')[0]}:*", "localhost:*", "127.0.0.1:*", *self.extra_allowed_hosts]
+
+    def mcp_allowed_origins(self) -> list[str]:
+        return [self.public_url, "http://localhost:*", "http://127.0.0.1:*"]
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -60,4 +74,5 @@ class Settings:
             provisioner_url=os.environ.get("PROVISIONER_URL") or None,
             provisioner_token=os.environ.get("PROVISIONER_TOKEN") or None,
             store_sync_interval_seconds=float(os.environ.get("STORE_SYNC_INTERVAL_SECONDS", "5")),
+            extra_allowed_hosts=tuple(h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()),
         )

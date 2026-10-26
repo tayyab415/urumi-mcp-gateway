@@ -195,6 +195,7 @@ def server_out(s: Server, tool_count: int) -> dict[str, Any]:
         "timeout_seconds": s.timeout_seconds,
         "forward_identity": s.forward_identity,
         "managed_by": s.managed_by,
+        "owner_id": s.owner_id,
         "status": "disabled" if not s.enabled else s.status,
         "health": s.status,
         "last_error": s.last_error,
@@ -248,9 +249,8 @@ async def check_upstream_url(url: str, allow_loopback: bool) -> None:
     except OSError:
         return  # not resolvable yet (e.g. a Service about to be created); discovery will report it
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_link_local or ip.is_multicast or ip.is_unspecified or (ip.is_loopback and not allow_loopback):
-            raise HTTPException(422, f"{host} resolves to a blocked address ({ip})")
+        if reason := upstreams.blocked_address(info[4][0], allow_loopback):
+            raise HTTPException(422, f"{host} resolves to a blocked address ({reason})")
 
 
 def credential_rules(auth_type: str, auth_header: str | None) -> None:
@@ -628,7 +628,8 @@ def build_router(settings: Settings) -> APIRouter:
                 headers["Authorization"] = f"Bearer {secret}"
             elif body.auth_header:
                 headers[body.auth_header] = secret
-        target = upstreams.Target(slug=body.slug, url=body.url, timeout=body.timeout_seconds, headers=headers)
+        target = upstreams.Target(slug=body.slug, url=body.url, timeout=body.timeout_seconds, headers=headers,
+                                  allow_loopback=settings.allow_loopback_upstreams)
         try:
             found = await upstreams.discover(target)
         except upstreams.UpstreamFailure as failure:
