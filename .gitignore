@@ -19,3 +19,4 @@ video/scripts/raw/
 video/scripts/raw-*/
 docs/evidence/*.mp4
 docs/evidence/*.webm
+.claude/worktrees/
