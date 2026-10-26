@@ -83,6 +83,14 @@ export function ConnectPage() {
               <InlineCode code={url || "…"} />
               <CopyButton value={url} label="Copy" />
             </InputRow>
+            <div style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", margin: "12px 0 6px" }}>
+              Search mode, for clients that load every tool at once (Cursor, small models): two tools, one to search and one to call.
+              Same permissions and audit.
+            </div>
+            <InputRow>
+              <InlineCode code={url ? `${url}/search` : "…"} />
+              <CopyButton value={url ? `${url}/search` : ""} label="Copy" />
+            </InputRow>
           </Card>
 
           <Card padded>
@@ -130,7 +138,8 @@ export function ConnectPage() {
               </div>
               <CodeBlock code={`claude mcp add --transport http urumi ${url}`} />
               <div style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", marginTop: 8 }}>
-                Use this or an API key, not both. Claude Code never tries OAuth when a static Authorization header is set.
+                Use this or an API key, not both. Claude Code never tries OAuth when a static Authorization header is set,
+                and after a browser sign-in it keeps using that sign-in for the same server name, so give a key-based entry another name.
               </div>
               <div className={styles.h} style={{ marginTop: 16 }}>Connected apps</div>
               {apps.loading ? <SkeletonRows rows={1} /> : apps.data?.length === 0 ? <EmptyState inline>No apps connected</EmptyState> : apps.data?.map((a) => (
