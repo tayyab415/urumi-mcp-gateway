@@ -19,3 +19,5 @@ it proves. The facts behind every number are in
 | `10-dod-user-a-chat.mp4` | Definition of done, user A (admin): store checkout, chat creates a product after approval, the product on the storefront, a shopper orders it, chat lists today's orders. |
 | `11-dod-user-b-claude-code.txt` | Definition of done, user B (Bob): Claude Code with only the URL and his key; tools from every enabled server; today's orders; one prompt using two upstreams; key revoked, next call 401. |
 | `12-dod-disable-kill-audit.txt`, `13-dod-disable-kill-audit.mp4` | Disable Shipping: its tools disappear from Bob's client and from chat. Kill the supplier Pod: the others keep working, the dashboard shows it down with the reason, then ok. The audit log attributes everything. |
+| `14-local-k3d-install.txt` | A fresh k3d cluster with the local values only (`scripts/local-up.sh`): both charts Ready in about 4.5 minutes; an MCP call reaches WordPress. |
+| `15-final-smoke.txt` | `scripts/smoke.sh` on the live VM after the last deploy: endpoints, OAuth discovery, each person's tools, the stores, all Pods healthy. |
