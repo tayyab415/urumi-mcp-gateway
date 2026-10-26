@@ -73,7 +73,11 @@ read-only root filesystem and a writable `/tmp`.
 ## On the internet
 
 The VM serves the app at **https://app.34-67-189-86.sslip.io** and the store
-at **https://shop.34-67-189-86.sslip.io**. A request gets in like this:
+at **https://shop.34-67-189-86.sslip.io**. The app's public address is
+**https://urumi-1027824348124.us-central1.run.app**: a Cloud Run service that
+forwards each request to the VM's Ingress ([design note, section
+11](../../docs/design.md#11-getting-in-from-the-internet)). A
+request gets in like this:
 
 ```text
 browser, Claude Code or Cursor
@@ -184,7 +188,7 @@ Everything that differs is a value. `values-prod.yaml` is an example:
 
 | Value | Local (k3d) | The GCP VM (`.runtime/app/values-vm.yaml`) | Production |
 |---|---|---|---|
-| `host`, `publicUrl` | `app.urumi.test`, port 18080 | `app.34-67-189-86.sslip.io`, `https://` | the real hostname, `https://` |
+| `host`, `publicUrl` | `app.urumi.test`, port 18080 | `app.34-67-189-86.sslip.io`; `publicUrl` is the Cloud Run proxy's `https://…run.app` | the real hostname, `https://` |
 | `ingress.annotations` | none | `cert-manager.io/cluster-issuer: letsencrypt` | the same, or your own certificate |
 | `ingress.tls` | off | on, Secret `urumi-app-tls` | on |
 | `gateway.cookieSecure` | false | true | true |

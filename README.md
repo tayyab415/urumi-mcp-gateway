@@ -16,11 +16,16 @@ Everything runs on Kubernetes and installs with two Helm charts.
 
 | What | Where |
 |---|---|
-| Dashboard and chat | https://app.34-67-189-86.sslip.io |
-| MCP endpoint | `https://app.34-67-189-86.sslip.io/mcp`, header `Authorization: Bearer <API key>`, or a browser sign-in (OAuth) |
+| Dashboard and chat | https://urumi-1027824348124.us-central1.run.app |
+| MCP endpoint | `https://urumi-1027824348124.us-central1.run.app/mcp`, header `Authorization: Bearer <API key>`, or a browser sign-in (OAuth) |
 | The store | https://shop.34-67-189-86.sslip.io (checkout uses cash on delivery) |
 | More stores | Stores page in the dashboard; each new store is `http://<name>.34-67-189-86.sslip.io` |
-| Search mode (for clients that load every tool) | `https://app.34-67-189-86.sslip.io/mcp/search`: two tools, search and call |
+| Search mode (for clients that load every tool) | `https://urumi-1027824348124.us-central1.run.app/mcp/search`: two tools, search and call |
+
+The `run.app` address is a Cloud Run service that only forwards requests
+([infra/cloud-run](infra/cloud-run/Caddyfile)). Everything runs on the
+Kubernetes cluster on the VM, which also answers directly at
+https://app.34-67-189-86.sslip.io.
 
 **Accounts.**
 
@@ -34,7 +39,7 @@ Everything runs on Kubernetes and installs with two Helm charts.
 exact command or config. For Claude Code:
 
 ```bash
-claude mcp add --transport http urumi https://app.34-67-189-86.sslip.io/mcp \
+claude mcp add --transport http urumi https://urumi-1027824348124.us-central1.run.app/mcp \
   --header "Authorization: Bearer urumi_..."
 ```
 
@@ -42,7 +47,7 @@ Or skip the key and sign in with the browser. Add the server without a header,
 then run `/mcp` in Claude Code and pick Authenticate:
 
 ```bash
-claude mcp add --transport http urumi https://app.34-67-189-86.sslip.io/mcp
+claude mcp add --transport http urumi https://urumi-1027824348124.us-central1.run.app/mcp
 ```
 
 Use one or the other. Claude Code never tries OAuth when a static

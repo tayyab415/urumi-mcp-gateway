@@ -2,7 +2,8 @@
 
 What could go wrong, what stops it, and what is still open. The design is in
 [design.md](design.md). Status as of 2026-10-26, for the deployment at
-`https://app.34-67-189-86.sslip.io`.
+`https://urumi-1027824348124.us-central1.run.app` (a Cloud Run proxy in front of the VM's
+cluster) and `https://app.34-67-189-86.sslip.io` (the VM directly).
 
 ## What is worth protecting
 

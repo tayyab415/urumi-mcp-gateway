@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Quick check of the live VM before a demo: endpoints, OAuth discovery, each
 # person's tools, the stores, every Pod. Read-only. Prints what it sees.
-#   bash scripts/smoke.sh
+#   bash scripts/smoke.sh                                            through Cloud Run
+#   GATEWAY=https://app.34-67-189-86.sslip.io bash scripts/smoke.sh  the VM directly
 set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-G=https://app.34-67-189-86.sslip.io
+G="${GATEWAY:-https://urumi-1027824348124.us-central1.run.app}"
 C="$HOME/.urumi/vm-team-credentials.json"
 echo "== Endpoints"
 echo "GET  /mcp            -> $(curl -s -o /dev/null -w '%{http_code}' $G/mcp)   (405: POST only)"

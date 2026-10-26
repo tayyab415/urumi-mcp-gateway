@@ -1,0 +1,29 @@
+# The Cloud Run front door for the app: https://urumi-<project number>.us-central1.run.app
+#
+# Cloud Run gives the app a stable Google address. It cannot run the cluster
+# itself: k3s needs a privileged machine, and Cloud Run wipes a container's
+# disk on restart. So this container runs only a proxy. Every request goes on,
+# over HTTPS, to the cluster's Ingress on the VM, and Kubernetes does the rest.
+#
+# Set by scripts/cloud-run.sh:
+#   UPSTREAM       https://app.34-67-189-86.sslip.io  (the Ingress on the VM)
+#   UPSTREAM_HOST  app.34-67-189-86.sslip.io
+#   PUBLIC_URL     this service's own run.app address
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT:8080} {
+	reverse_proxy {$UPSTREAM} {
+		# Traefik routes by hostname, and the VM's certificate is for the
+		# sslip.io name, so the request arrives under that name.
+		header_up Host {$UPSTREAM_HOST}
+		# A redirect that names the VM's address is rewritten to this one, so
+		# a browser never leaves the run.app address.
+		header_down Location ^https://{$UPSTREAM_HOST} {$PUBLIC_URL}
+		# Chat answers and MCP responses stream; pass every write on at once.
+		flush_interval -1
+	}
+}

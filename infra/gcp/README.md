@@ -14,7 +14,7 @@ remains on `t3-agent-1`. Stopping the application VM does not stop T3.
 | Public IP | `34.67.189.86`, static (`urumi-app-ip`), kept while stopped |
 | Cluster | `urumi-vm`, k3d with one K3s server |
 | Ingress | public ports `80` and `443`, and VM loopback port `18080` |
-| App | https://app.34-67-189-86.sslip.io |
+| App | https://urumi-1027824348124.us-central1.run.app (Cloud Run proxy, [infra/cloud-run](../cloud-run/Caddyfile)), or https://app.34-67-189-86.sslip.io directly |
 | Store | https://shop.34-67-189-86.sslip.io |
 | Kubernetes API | VM loopback port `16443` |
 

@@ -231,6 +231,24 @@ and login one per client address. k3d's load balancer hides client addresses, so
 on this VM the login limit is one shared limit. Details:
 [the app chart README](../charts/urumi-app/README.md#on-the-internet).
 
+The public address is a Cloud Run one, `https://urumi-1027824348124.us-central1.run.app`.
+Cloud Run cannot host the cluster: k3s needs a privileged machine, and Cloud
+Run wipes a container's disk when it restarts. So the Cloud Run service is only
+a front door, a Caddy proxy ([infra/cloud-run](../infra/cloud-run/Caddyfile),
+deployed by `scripts/cloud-run.sh`). It sends each request over HTTPS to the
+VM's Ingress under the VM's hostname and checks the VM's certificate. Streams
+pass through as they are written: a chat answer arrives word by word.
+
+Two settings make this work. `publicUrl` names the Cloud Run address, so OAuth
+discovery, the token audience and the Connect page all name it. The gateway
+also accepts the Ingress hostname in its Host check, because that is the name
+requests arrive under. The proxy grants nothing new: it reaches the same
+Ingress anyone can reach directly, and every request still needs a key, a
+cookie or a token. What it costs: one more hop (tens of milliseconds), about a
+second's wait after a quiet spell while Cloud Run starts the proxy, and Google
+keeps some paths for itself (`/healthz` answers 404 through Cloud Run, which is
+fine because Kubernetes checks health inside the cluster).
+
 ## 12. Helm: one chart, many places
 
 Two charts: `charts/urumi-store` (WordPress, MariaDB, a setup Job that installs

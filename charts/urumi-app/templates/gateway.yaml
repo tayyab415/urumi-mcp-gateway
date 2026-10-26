@@ -104,9 +104,12 @@ spec:
             - name: PUBLIC_URL
               value: {{ .Values.publicUrl | quote }}
             # /mcp checks the Host header (DNS-rebinding protection). The public
-            # hostname comes from PUBLIC_URL; chat calls the in-cluster Service name.
+            # hostname comes from PUBLIC_URL; chat calls the in-cluster Service
+            # name. The Ingress hostname is allowed too: with a proxy in front
+            # (infra/cloud-run), PUBLIC_URL names the proxy and requests reach
+            # the Ingress under this name.
             - name: MCP_ALLOWED_HOSTS
-              value: {{ printf "%s:8080,%s" $name $name | quote }}
+              value: {{ printf "%s:8080,%s,%s" $name $name .Values.host | quote }}
             - name: COOKIE_SECURE
               value: {{ .Values.gateway.cookieSecure | quote }}
             - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS
