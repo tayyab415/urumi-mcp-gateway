@@ -1,0 +1,6 @@
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: 13px; white-space: nowrap; transition: background-color 120ms, color 120ms, border-color 120ms; }
+.chip:hover { background: var(--surface-muted); color: var(--foreground); }
+.chip[aria-pressed="true"], .chip[data-selected="true"] { background: var(--surface-muted); color: var(--foreground); border-color: var(--border-strong); }
+.chip svg { width: 14px; height: 14px; }
+.static { cursor: default; }
+.static:hover { background: var(--surface); color: var(--text-secondary); }

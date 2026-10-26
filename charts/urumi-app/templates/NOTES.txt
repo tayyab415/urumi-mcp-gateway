@@ -1,0 +1,7 @@
+Dashboard:     {{ .Values.publicUrl }}/
+MCP endpoint:  {{ .Values.publicUrl }}/mcp   (Authorization: Bearer <API key from the dashboard>)
+Admin login:   {{ .Values.gateway.adminEmail }}, password in the admin-password key of Secret {{ .Values.secretName }}
+
+The gateway registers {{ join ", " .Values.gateway.bootstrapServers }} on its first start only.
+Its volume ({{ .Release.Name }}-gateway-data) survives helm uninstall.
+Only Traefik reaches the gateway, chat and dashboard; only the gateway reaches the MCP servers.

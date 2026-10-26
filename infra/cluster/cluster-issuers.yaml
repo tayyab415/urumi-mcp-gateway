@@ -1,0 +1,37 @@
+# Where cert-manager gets certificates. Applied by:
+#   bash scripts/gcp-vm.sh install-cert-manager
+#
+# An Ingress opts in with the annotation cert-manager.io/cluster-issuer: <name>.
+# cert-manager then proves to the CA that we control the hostname (HTTP-01: the
+# CA fetches a token from http://<host>/.well-known/acme-challenge/ through
+# Traefik), stores the certificate in the Ingress's TLS Secret, and renews it
+# before it expires.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+# Same, against Let's Encrypt's test CA: much higher rate limits, but browsers
+# do not trust its certificates. Use it to debug issuance.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

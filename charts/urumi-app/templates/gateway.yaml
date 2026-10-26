@@ -1,0 +1,154 @@
+{{- $component := "gateway" }}
+{{- $name := printf "%s-gateway" .Release.Name }}
+{{- /* The servers a fresh install starts with. Credentials stay in the Secret:
+       each entry names the env var that holds its credential. */}}
+{{- $known := dict
+  "woo" (dict "slug" "woo" "name" "WooCommerce" "url" (printf "http://%s-woo-mcp:8000/mcp" .Release.Name)
+              "timeout_seconds" .Values.woo.timeoutSeconds)
+  "shipping" (dict "slug" "shipping" "name" "Shipping (simulated)" "url" (printf "http://%s-shipping:8000/mcp" .Release.Name)
+                   "auth_type" "bearer" "credential_env" "SHIPPING_API_TOKEN" "timeout_seconds" 5)
+  "supplier" (dict "slug" "supplier" "name" "Supplier (simulated)" "url" (printf "http://%s-supplier:8000/mcp" .Release.Name)
+                   "auth_type" "header" "auth_header" "X-Supplier-Key" "credential_env" "SUPPLIER_API_KEY" "timeout_seconds" 5)
+  "slack" (dict "slug" "slack" "name" "Slack (one channel)" "url" (printf "http://%s-slack-mcp:8000/mcp" .Release.Name)
+                "auth_type" "bearer" "credential_env" "SLACK_MCP_TOKEN" "timeout_seconds" .Values.slack.timeoutSeconds "forward_identity" true) }}
+{{- $servers := list }}
+{{- range .Values.gateway.bootstrapServers }}
+{{- $servers = append $servers (required (printf "gateway.bootstrapServers: unknown server %q" .) (get $known .)) }}
+{{- end }}
+{{- if and .Values.slack.enabled (not (has "slack" .Values.gateway.bootstrapServers)) }}
+{{- $servers = append $servers (get $known "slack") }}
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  annotations:
+    # Users, API keys, servers, sealed credentials and the audit log live here.
+    # helm uninstall leaves this volume alone.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.gateway.storage.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.gateway.storage.size }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-bootstrap
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+data:
+  servers.json: {{ $servers | toJson | quote }}
+  # The same list in the shape `python -m gateway.seed` reads. A gateway whose database already
+  # has servers ignores servers.json; seed.json adds the missing ones through the API.
+  seed.json: {{ dict "servers" $servers | toJson | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  # One replica: SQLite allows one writer, and the volume mounts on one node.
+  replicas: 1
+  strategy:
+    # The old Pod lets go of the volume before the new one starts.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: gateway
+          image: {{ include "urumi-app.image" .Values.images.gateway }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: sqlite+aiosqlite:////data/gateway.db
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "GATEWAY_SECRET_KEY" "key" "gateway-secret-key") | nindent 12 }}
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              value: {{ .Values.gateway.adminEmail | quote }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "BOOTSTRAP_ADMIN_PASSWORD" "key" "admin-password") | nindent 12 }}
+            - name: BOOTSTRAP_SERVERS_FILE
+              value: /etc/urumi/servers.json
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "SHIPPING_API_TOKEN" "key" "shipping-api-token") | nindent 12 }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "SUPPLIER_API_KEY" "key" "supplier-api-key") | nindent 12 }}
+            {{- if .Values.slack.enabled }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "SLACK_MCP_TOKEN" "key" "slack-mcp-token") | nindent 12 }}
+            {{- end }}
+            - name: PUBLIC_URL
+              value: {{ .Values.publicUrl | quote }}
+            - name: COOKIE_SECURE
+              value: {{ .Values.gateway.cookieSecure | quote }}
+            - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS
+              value: {{ .Values.gateway.upstreamTimeoutSeconds | quote }}
+          # /readyz checks the gateway's own database only. A dead upstream makes
+          # its own tools fail; it must not take the gateway out of the Service.
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 4
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: bootstrap
+              mountPath: /etc/urumi
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+        - name: bootstrap
+          configMap:
+            name: {{ $name }}-bootstrap
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

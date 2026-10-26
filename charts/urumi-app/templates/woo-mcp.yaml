@@ -1,0 +1,82 @@
+{{- $component := "woo-mcp" }}
+{{- $name := printf "%s-woo-mcp" .Release.Name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  # Stateless (MCP over HTTP with JSON responses), so a replaced Pod loses nothing.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: woo-mcp
+          image: {{ include "urumi-app.image" .Values.images.wooMcp }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # woo-mcp calls WordPress over plain HTTP inside the cluster, so
+            # WordPress rebuilds the signed URL as http://<home host>/..., even
+            # when the public store is HTTPS. Sign that, with OAuth 1.0a
+            # (WooCommerce accepts Basic auth only over HTTPS).
+            - name: WOO_STORE_URL
+              value: {{ regexReplaceAll "^https://" .Values.store.publicUrl "http://" | quote }}
+            - name: WOO_AUTH
+              value: oauth1
+            - name: WOO_API_URL
+              value: {{ .Values.store.apiUrl | quote }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "WOO_CONSUMER_KEY" "key" "woo-consumer-key") | nindent 12 }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "WOO_CONSUMER_SECRET" "key" "woo-consumer-secret") | nindent 12 }}
+            - name: WOO_TIMEOUT_SECONDS
+              value: {{ .Values.woo.timeoutSeconds | quote }}
+          # /healthz does not call WooCommerce. A slow store shows up as tool
+          # errors and an "unreachable" status, not as restarts of this Pod.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.woo.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

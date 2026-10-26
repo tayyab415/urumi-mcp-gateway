@@ -1,0 +1,12 @@
+database:
+  persistence:
+    storageClass: local-path
+wordpress:
+  publicUrl: http://shop.urumi.test:18080
+  persistence:
+    storageClass: local-path
+ingress:
+  className: traefik
+  host: shop.urumi.test
+  tls:
+    enabled: false

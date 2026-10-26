@@ -1,0 +1,18 @@
+.field { display: flex; flex-direction: column; gap: 6px; }
+.label { font-size: var(--text-sm); color: var(--foreground); }
+.hint { font-size: var(--text-xs); color: var(--text-muted); }
+.error { font-size: var(--text-xs); color: var(--danger); }
+.input {
+  width: 100%; height: var(--control-height-sm); padding: 0 12px;
+  background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-field);
+  color: var(--foreground); font-size: var(--text-sm); outline: none;
+  transition: border-color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
+}
+.input::placeholder { color: var(--text-muted); }
+.input:hover { border-color: var(--border-strong); }
+.input:focus { border-color: var(--border-strong); background: var(--surface); }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.mono { font-family: var(--font-mono); font-size: 13px; }
+.textarea { height: auto; min-height: 80px; padding: 10px 12px; resize: vertical; line-height: 1.45; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row .input { flex: 1; }

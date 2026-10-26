@@ -1,0 +1,6 @@
+.tabs { position: relative; display: inline-flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); }
+.tab { position: relative; z-index: 1; height: 30px; white-space: nowrap; flex: none; padding: 0 14px; border-radius: var(--radius-pill); color: var(--text-muted); font-size: var(--text-sm); font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: color 120ms; }
+.tab[aria-selected="true"] { color: var(--foreground); }
+.tab:hover { color: var(--foreground); }
+.highlight { position: absolute; inset: 0; z-index: 0; border-radius: var(--radius-pill); background: var(--surface-muted); }
+.count { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }

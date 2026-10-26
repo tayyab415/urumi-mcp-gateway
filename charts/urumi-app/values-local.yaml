@@ -1,0 +1,8 @@
+# The k3d cluster: Ingress on loopback port 18080.
+host: app.urumi.test
+publicUrl: http://app.urumi.test:18080
+store:
+  publicUrl: http://shop.urumi.test:18080
+gateway:
+  storage:
+    storageClassName: local-path

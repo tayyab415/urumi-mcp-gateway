@@ -1,0 +1,15 @@
+{
+  "users": [
+    {"email": "ana@urumi.test", "name": "Ana", "role": "member"},
+    {"email": "bob@urumi.test", "name": "Bob", "role": "member"},
+    {"email": "chen@urumi.test", "name": "Chen", "role": "member"},
+    {"email": "dev@urumi.test", "name": "Dev", "role": "member"}
+  ],
+  "servers": [
+    {"slug": "woo", "name": "WooCommerce", "url": "${WOO_MCP_URL:-http://127.0.0.1:18912/mcp}", "timeout_seconds": 15},
+    {"slug": "shipping", "name": "Shipping (simulated)", "url": "${SHIPPING_MCP_URL:-http://127.0.0.1:18921/mcp}",
+     "auth_type": "bearer", "credential_env": "SHIPPING_TOKEN", "timeout_seconds": 5},
+    {"slug": "supplier", "name": "Supplier (simulated)", "url": "${SUPPLIER_MCP_URL:-http://127.0.0.1:18922/mcp}",
+     "auth_type": "header", "auth_header": "X-Supplier-Key", "credential_env": "SUPPLIER_API_KEY", "timeout_seconds": 5}
+  ]
+}

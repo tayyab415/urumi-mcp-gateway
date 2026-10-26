@@ -1,0 +1,234 @@
+# Passwords belong in a pre-existing Kubernetes Secret, never in this file.
+credentials:
+  existingSecret: urumi-store-credentials
+
+database:
+  name: wordpress
+  user: wordpress
+  image:
+    repository: docker.io/library/mariadb
+    tag: "11.4.13"
+    digest: sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+  persistence:
+    size: 8Gi
+    # null uses the cluster's default StorageClass; "" requires a static PV.
+    storageClass: null
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+wordpress:
+  # Include the browser-facing port if it is not 80 or 443.
+  publicUrl: http://shop.urumi.test:18080
+  image:
+    repository: docker.io/library/wordpress
+    tag: "7.1.3-php8.3-apache"
+    digest: sha256:81a34254acaa6ff3b9a67268c2745e9a041c4094cbe5ccd35b75ed3bbdc033b5
+  persistence:
+    size: 8Gi
+    storageClass: null
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# A Job that Helm runs after every install and upgrade. It installs WordPress
+# and WooCommerce, then applies these settings. Rerunning it is safe.
+storeSetup:
+  enabled: true
+  image:
+    repository: docker.io/library/wordpress
+    tag: "cli-2.12.0-php8.3"
+    digest: sha256:661db880e953da051abcac6c0a769767b995a82cd52101c003ca7438dd427d7d
+  title: Urumi Sports
+  admin:
+    # The password is the wordpress-admin-password key in the credentials Secret.
+    username: urumi-admin
+    email: admin@urumi.test
+  woocommerce:
+    version: "11.2.1"
+    country: "IN:MH"
+    currency: INR
+  # The Job adds this catalog once per version. Bump the version to add new
+  # items on the next upgrade; products that already exist (by SKU) are kept.
+  catalog:
+    version: sports-v1
+    categories: [Football, Cricket, Basketball, Badminton]
+    products:
+      - name: Real Madrid Home Jersey 2026/27
+        sku: RM-HOME-2627
+        category: Football
+        price: "6499"
+        description: Replica home shirt in classic white.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/Beckham_shirt_Real_Madrid.jpg/960px-Beckham_shirt_Real_Madrid.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Beckham_shirt_Real_Madrid.jpg"
+          license: "CC BY 2.0"
+          licenseUrl: "https://creativecommons.org/licenses/by/2.0"
+          author: "Chris Brown"
+        sizes:
+          - {size: S, stock: 4}
+          - {size: M, stock: 8}
+          - {size: L, stock: 6}
+          - {size: XL, stock: 2}
+      - name: Manchester United Home Jersey 2026/27
+        sku: MUFC-HOME-2627
+        category: Football
+        price: "5999"
+        description: Replica home shirt in United red.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Manchester_United_Home_Strip_201213.jpg/960px-Manchester_United_Home_Strip_201213.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Manchester_United_Home_Strip_201213.jpg"
+          license: "CC BY-SA 2.0"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/2.0"
+          author: "Matthew Bloomfield"
+        stock: 12
+      - name: Nike Mercurial Academy Boots
+        sku: NIKE-MERC-ACAD
+        category: Football
+        price: "7495"
+        description: Firm-ground boots for grass pitches.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Nike_Superfly_III.jpg/960px-Nike_Superfly_III.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Nike_Superfly_III.jpg"
+          license: "CC BY-SA 3.0"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0"
+          author: "Erin Corey"
+        sizes:
+          - {size: UK 7, stock: 3}
+          - {size: UK 8, stock: 5}
+          - {size: UK 9, stock: 4}
+          - {size: UK 10, stock: 1}
+      - name: Nike Strike Football (Size 5)
+        sku: NIKE-STRIKE-5
+        category: Football
+        price: "1995"
+        description: Machine-stitched training ball, size 5.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Nike_soccer_ball.jpg/960px-Nike_soccer_ball.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Nike_soccer_ball.jpg"
+          license: "CC BY 2.0"
+          licenseUrl: "https://creativecommons.org/licenses/by/2.0"
+          author: "Jarrett Campbell"
+        stock: 25
+      - name: India ODI Jersey (Adidas)
+        sku: IND-ODI-JERSEY
+        category: Cricket
+        price: "4999"
+        description: Replica one-day international jersey.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Sachin_Tendulkar%27s_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg/960px-Sachin_Tendulkar%27s_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Sachin_Tendulkar's_World_Cup_winning_jersey_at_Blades_of_Glory_Cricket_Museum,_Pune.jpg"
+          license: "CC BY 4.0"
+          licenseUrl: "https://creativecommons.org/licenses/by/4.0"
+          author: "DesiBoy101"
+        stock: 15
+      - name: Mumbai Indians Jersey
+        sku: MI-JERSEY
+        category: Cricket
+        price: "2999"
+        description: Replica IPL match jersey.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg/960px-Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum%2C_Pune.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Jersey_of_Sourav_Ganguly_at_Blades_of_Glory_Cricket_Museum,_Pune.jpg"
+          license: "CC BY 4.0"
+          licenseUrl: "https://creativecommons.org/licenses/by/4.0"
+          author: "DesiBoy101"
+        stock: 3
+      - name: SG English Willow Bat
+        sku: SG-EW-BAT
+        category: Cricket
+        price: "12999"
+        description: Full-size English willow bat, short handle.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/A_modern_Cricket_bat_%28back_view%29.jpg/960px-A_modern_Cricket_bat_%28back_view%29.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:A_modern_Cricket_bat_(back_view).jpg"
+          license: "CC BY-SA 3.0"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0"
+          author: "Aravind Sivaraj (colour corrected by Begoon)"
+        stock: 6
+      - name: SG Test Leather Ball
+        sku: SG-TEST-BALL
+        category: Cricket
+        price: "1799"
+        description: Red four-piece leather ball for longer formats.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/GandM_Purist_156g_cricket_ball_n01.jpg/960px-GandM_Purist_156g_cricket_ball_n01.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:GandM_Purist_156g_cricket_ball_n01.jpg"
+          license: "CC BY 2.5"
+          licenseUrl: "https://creativecommons.org/licenses/by/2.5"
+          author: "Marie-Lan Nguyen"
+        stock: 20
+      - name: LA Lakers Icon Jersey
+        sku: LAL-ICON
+        category: Basketball
+        price: "6999"
+        description: Replica Icon Edition jersey in Lakers gold.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg/960px-Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Manila_Marriott_Hotel_at_Newport_World_Resorts_CNE_08.jpg"
+          license: "CC BY-SA 4.0"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0"
+          author: "CNEcija12345"
+        stock: 9
+      - name: Molten BG4500 Basketball
+        sku: MOLTEN-BG4500
+        category: Basketball
+        price: "4999"
+        description: Indoor composite leather ball, size 7.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/be/Isolated_basketball.png/960px-Isolated_basketball.png"
+          source: "https://commons.wikimedia.org/wiki/File:Isolated_basketball.png"
+          license: "CC BY-SA 3.0"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0"
+          author: "MrX"
+        stock: 10
+      - name: Yonex Nanoray Light 18i Racket
+        sku: YONEX-NR18I
+        category: Badminton
+        price: "2999"
+        description: Light, head-heavy racket for beginners.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Badminton-1428046.jpg/960px-Badminton-1428046.jpg"
+          source: "https://commons.wikimedia.org/wiki/File:Badminton-1428046.jpg"
+          license: "CC0"
+          licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en"
+          author: "annca"
+        stock: 14
+      - name: Yonex Mavis 350 Shuttles (Tube of 6)
+        sku: YONEX-MAVIS350
+        category: Badminton
+        price: "1199"
+        description: Nylon shuttlecocks, medium speed.
+        image:
+          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Shuttlecocks_Nylon_Gelb.jpeg/960px-Shuttlecocks_Nylon_Gelb.jpeg"
+          source: "https://commons.wikimedia.org/wiki/File:Shuttlecocks_Nylon_Gelb.jpeg"
+          license: "CC BY-SA 3.0 de"
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/de/deed.en"
+          author: "Tataffe"
+        stock: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: traefik
+  host: shop.urumi.test
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+  # Traefik only, and only with TLS on: redirect plain HTTP to HTTPS.
+  redirectToHttps: false

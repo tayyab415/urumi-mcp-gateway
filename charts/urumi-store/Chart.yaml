@@ -1,0 +1,7 @@
+apiVersion: v2
+name: urumi-store
+description: Single WooCommerce store (WordPress and MariaDB) for the Urumi assignment
+type: application
+version: 0.2.0
+appVersion: "7.1.3"
+kubeVersion: ">=1.25.0-0"

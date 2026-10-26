@@ -1,0 +1,17 @@
+Store URL: {{ .Values.wordpress.publicUrl }}
+Admin:     {{ .Values.wordpress.publicUrl }}/wp-admin/  (user {{ .Values.storeSetup.admin.username }})
+Required credentials Secret: {{ .Values.credentials.existingSecret }}
+{{- if .Values.storeSetup.enabled }}
+
+The {{ .Release.Name }}-store-setup Job installed WordPress and WooCommerce
+{{ .Values.storeSetup.woocommerce.version }}, enabled cash on delivery and free shipping. Its log:
+  kubectl logs -n {{ .Release.Namespace }} job/{{ .Release.Name }}-store-setup
+The admin password is the wordpress-admin-password key in the Secret.
+{{- else }}
+
+storeSetup is disabled: finish the WordPress wizard and install WooCommerce by hand.
+{{- end }}
+
+The two PVCs survive Helm uninstall. Do not delete the namespace or PVCs unless
+you intend to remove the store's data. Local-path storage is tied to its node;
+Pod replacement persistence is not a backup or protection against node loss.

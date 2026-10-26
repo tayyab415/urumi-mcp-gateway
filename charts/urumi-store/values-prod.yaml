@@ -1,0 +1,18 @@
+# Example VPS settings. Replace the hostname and provide a valid TLS Secret.
+wordpress:
+  publicUrl: https://shop.example.com
+database:
+  persistence:
+    storageClass: null
+ingress:
+  className: traefik
+  host: shop.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: urumi-store-tls
+  redirectToHttps: true
+storeSetup:
+  admin:
+    email: admin@example.com

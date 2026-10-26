@@ -1,0 +1,4 @@
+.block { position: relative; border: 1px solid var(--border); border-radius: 14px; background: var(--background); padding: 12px 14px; font-family: var(--font-mono); font-size: 13px; line-height: 21px; color: var(--text-secondary); overflow: auto; }
+.copy { position: absolute; top: 8px; right: 8px; }
+.inline { display: inline-flex; align-items: center; gap: 8px; height: var(--control-height-sm); padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--background); font-family: var(--font-mono); font-size: 13px; color: var(--foreground); min-width: 0; }
+.inline code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

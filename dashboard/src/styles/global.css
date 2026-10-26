@@ -1,0 +1,61 @@
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+button:disabled { cursor: default; }
+a { color: inherit; text-decoration: none; }
+code, pre, kbd, .mono { font-family: var(--font-mono); font-size: 13px; }
+pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.tnum { font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+::selection { background: color-mix(in oklab, var(--accent) 35%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+/* The light sweep on live labels. Real-time numbers from the reference: 570 ms sweep, 2.4 s period, 570 ms delay. */
+.shimmer {
+  color: transparent;
+  background-image: linear-gradient(90deg,
+    var(--text-live) 0%, var(--text-live) 42%,
+    var(--shimmer-peak) 50%,
+    var(--text-live) 58%, var(--text-live) 100%);
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 2400ms linear 570ms infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  24%  { background-position: 0% 0; }
+  100% { background-position: 0% 0; }
+}
+
+/* A soft tint that crosses a row once, to show where a change landed. */
+.tint-sweep { position: relative; overflow: hidden; }
+.tint-sweep::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--accent-tint) 40%, var(--accent-tint) 60%, transparent 100%);
+  background-size: 200% 100%;
+  animation: tint-sweep 600ms var(--ease-standard) 1 both;
+}
+@keyframes tint-sweep { from { background-position: 150% 0; } to { background-position: -150% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer { animation: none; color: var(--text-live); background: none; }
+  .tint-sweep::after { animation: none; }
+}

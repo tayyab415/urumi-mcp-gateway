@@ -1,0 +1,14 @@
+.wrap { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px; border: 1px solid var(--border); border-radius: 28px; background: var(--surface); transition: border-color 120ms, opacity 160ms; }
+.wrap:focus-within { border-color: var(--border-strong); }
+.dimmed { opacity: .6; }
+.textarea { flex: 1; min-width: 0; resize: none; background: none; border: 0; outline: none; padding: 10px 0; line-height: 20px; max-height: 160px; color: var(--foreground); font-size: var(--text-sm); }
+.textarea::placeholder { color: var(--text-muted); }
+.send { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--on-accent); background: var(--accent); flex: none; }
+.send:hover { background: var(--accent-hover); }
+.send:disabled { background: var(--surface-muted); color: var(--text-muted); }
+.stop { background: var(--foreground); color: var(--background); }
+.stop:hover { background: var(--text-secondary); }
+.send svg { width: 18px; height: 18px; }
+.compact { border-radius: 22px; padding: 6px 6px 6px 14px; }
+.compact .send { width: 34px; height: 34px; }
+.compact .textarea { padding: 7px 0; }

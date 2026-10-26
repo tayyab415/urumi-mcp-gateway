@@ -1,0 +1,39 @@
+{{- /* Traefik middlewares: small steps Traefik runs on a request before it
+       reaches the Service. ingress.yaml attaches them by name. */}}
+{{- if .Values.ingress.traefik.enabled }}
+{{- if .Values.ingress.tls.enabled }}
+# Plain HTTP gets a permanent redirect to HTTPS. A request that is already
+# HTTPS passes through unchanged.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Release.Name }}-https
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- end }}
+{{- range $name, $limit := .Values.ingress.traefik.rateLimits }}
+---
+# Up to `burst` requests at once, refilled at `average` per `period`. Past
+# that, Traefik answers 429 without calling the Service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}-limit
+  labels:
+    {{- include "urumi-app.labels" $ | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ $limit.average }}
+    period: {{ $limit.period }}
+    burst: {{ $limit.burst }}
+    {{- with $limit.header }}
+    # One allowance per value of this header, e.g. per API key.
+    sourceCriterion:
+      requestHeaderName: {{ . }}
+    {{- end }}
+{{- end }}
+{{- end }}

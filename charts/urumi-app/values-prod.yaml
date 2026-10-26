@@ -1,0 +1,20 @@
+# Example public settings. Replace the hostnames. With cert-manager installed
+# (bash scripts/gcp-vm.sh install-cert-manager), the annotation below gets and
+# renews the certificate; without it, create the TLS Secret yourself.
+host: app.example.com
+publicUrl: https://app.example.com
+ingress:
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: urumi-app-tls
+store:
+  publicUrl: https://shop.example.com
+gateway:
+  adminEmail: admin@example.com
+  # The login cookie is only sent over HTTPS.
+  cookieSecure: true
+  storage:
+    storageClassName: ""

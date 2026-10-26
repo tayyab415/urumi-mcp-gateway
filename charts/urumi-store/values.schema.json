@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "credentials",
+    "database",
+    "wordpress",
+    "ingress",
+    "storeSetup"
+  ],
+  "properties": {
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "existingSecret"
+      ],
+      "properties": {
+        "existingSecret": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": [
+        "name",
+        "user",
+        "image",
+        "persistence",
+        "resources"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "persistence": {
+          "$ref": "#/definitions/persistence"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "wordpress": {
+      "type": "object",
+      "required": [
+        "publicUrl",
+        "image",
+        "persistence",
+        "resources"
+      ],
+      "properties": {
+        "publicUrl": {
+          "type": "string",
+          "pattern": "^https?://[a-zA-Z0-9.-]+(:[0-9]+)?$"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "persistence": {
+          "$ref": "#/definitions/persistence"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "storeSetup": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "image",
+        "title",
+        "admin",
+        "woocommerce",
+        "catalog",
+        "resources"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "admin": {
+          "type": "object",
+          "required": [
+            "username",
+            "email"
+          ],
+          "properties": {
+            "username": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.@-]{3,60}$"
+            },
+            "email": {
+              "type": "string",
+              "pattern": "^[^@\\s]+@[^@\\s]+$"
+            }
+          }
+        },
+        "woocommerce": {
+          "type": "object",
+          "required": [
+            "version",
+            "country",
+            "currency"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "country": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}(:[A-Z0-9]+)?$"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "catalog": {
+          "type": "object",
+          "required": [
+            "version",
+            "categories",
+            "products"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "categories": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "products": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "sku",
+                  "category",
+                  "price"
+                ],
+                "oneOf": [
+                  {
+                    "required": [
+                      "stock"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "sizes"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sku": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9-]+$"
+                  },
+                  "category": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "price": {
+                    "type": "string",
+                    "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "stock": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "sizes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "size",
+                        "stock"
+                      ],
+                      "properties": {
+                        "size": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "stock": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  },
+                  "image": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url",
+                      "source",
+                      "license",
+                      "licenseUrl",
+                      "author"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "pattern": "^https://.+\\.(jpe?g|png)$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "pattern": "^https://"
+                      },
+                      "license": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "licenseUrl": {
+                        "type": "string"
+                      },
+                      "author": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "className",
+        "host",
+        "tls"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tls": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "secretName"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "secretName": {
+              "type": "string"
+            }
+          }
+        },
+        "redirectToHttps": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "image": {
+      "type": "object",
+      "required": [
+        "repository",
+        "tag",
+        "digest"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "required": [
+        "size"
+      ],
+      "properties": {
+        "size": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$"
+        },
+        "storageClass": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "$ref": "#/definitions/quantities"
+        },
+        "limits": {
+          "$ref": "#/definitions/quantities"
+        }
+      }
+    },
+    "quantities": {
+      "type": "object",
+      "required": [
+        "cpu",
+        "memory"
+      ],
+      "properties": {
+        "cpu": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

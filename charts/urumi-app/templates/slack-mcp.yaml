@@ -1,0 +1,74 @@
+{{- if .Values.slack.enabled }}
+{{- $name := printf "%s-slack-mcp" .Release.Name }}
+{{- $component := "slack-mcp" }}
+{{- /* One shared bot token; the gateway decides who may use it. The server is tied
+       to one channel and has no tool that takes a channel. */}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: slack-mcp
+          image: {{ include "urumi-app.image" .Values.images.slackMcp }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [".venv/bin/uvicorn", "slack_mcp.server:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "SLACK_BOT_TOKEN" "key" "slack-bot-token") | nindent 12 }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "SLACK_MCP_TOKEN" "key" "slack-mcp-token") | nindent 12 }}
+            - name: SLACK_CHANNEL_ID
+              value: {{ required "slack.channelId is required when slack.enabled" .Values.slack.channelId | quote }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.slack.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+{{- end }}

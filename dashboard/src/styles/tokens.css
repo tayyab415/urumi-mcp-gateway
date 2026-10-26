@@ -1,0 +1,33 @@
+/* Urumi additions on top of Arc's foundation.css. Loaded after it.
+   Only what the run card and dashboard need and Arc does not define. */
+:root {
+  --font-inter: "Inter Variable";
+  --font-geist: "Inter Variable"; /* one typeface everywhere, as in the reference */
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --rail-width: 228px;
+  --page-max: 1120px;
+}
+
+:root[data-theme="dark"] {
+  /* Live labels are dimmer than settled ones on purpose (design principle 3). */
+  --text-live: oklch(61% 0 0);
+  --shimmer-peak: oklch(95% 0 0);
+  /* The active segment's track: accent at about 20% over the hairline. */
+  --accent-soft: color-mix(in oklab, var(--accent) 20%, var(--border));
+  --accent-hover: color-mix(in oklab, var(--accent) 93%, black);
+  --accent-pressed: color-mix(in oklab, var(--accent) 86%, black);
+  --on-accent: #0b0b0b;
+  --glyph-warm: #df7b6a;
+  --orb-fill: color-mix(in oklab, var(--glyph-warm) 8%, var(--surface));
+  --success-soft: color-mix(in oklab, var(--success) 8%, var(--surface));
+  --danger-soft: color-mix(in oklab, var(--danger) 8%, var(--surface));
+  --warning-soft: color-mix(in oklab, var(--warning) 10%, var(--surface));
+  --accent-tint: color-mix(in oklab, var(--accent) 10%, transparent);
+  --radius-card: 22px;   /* page cards and the agent run card */
+  --radius-task: 28px;   /* the chat task card */
+  --radius-field: 12px;
+  --run-card-width: 24rem;
+  --run-card-row: 28px;
+  --task-row: 38px;
+  --shadow-pill: 0 16px 40px -12px rgb(0 0 0 / 0.55);
+}

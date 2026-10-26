@@ -1,0 +1,27 @@
+.list { display: grid; gap: 12px; }
+.head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; width: 100%; text-align: left; color: inherit; }
+.name { font-size: 15px; font-weight: 500; color: var(--foreground); white-space: nowrap; }
+.url { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.status { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.success { color: var(--success); } .danger { color: var(--danger); } .neutral { color: var(--text-muted); } .checking { color: var(--text-secondary); }
+.chev { width: 16px; height: 16px; color: var(--text-muted); transition: transform 200ms var(--ease-standard); flex: none; }
+.open .chev { transform: rotate(180deg); }
+.body { padding: 0 16px 14px; }
+.meta { display: flex; justify-content: space-between; padding: 6px 0 8px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--text-xs); }
+.tool { display: flex; align-items: center; gap: 12px; height: 36px; border-top: 1px solid var(--border); font-size: var(--text-sm); }
+.tool svg { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
+.toolName { font-family: var(--font-mono); font-size: 13px; color: var(--foreground); width: 42%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolTitle { color: var(--text-secondary); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolDur { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.errorLine { display: flex; align-items: center; gap: 12px; height: 36px; border-top: 1px solid var(--border); color: var(--danger); }
+.errorLine svg { width: 16px; height: 16px; flex: none; }
+.errorRight { margin-left: auto; color: var(--text-muted); font-size: var(--text-xs); }
+.bar { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.openAudit { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.openAudit:hover { color: var(--foreground); }
+.openAudit svg { width: 14px; height: 14px; }
+.dim { opacity: .6; }
+.test { border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; display: grid; gap: 8px; }
+.testRow { display: flex; align-items: center; gap: 10px; font-size: var(--text-sm); color: var(--text-secondary); }
+.testRow svg { width: 16px; height: 16px; flex: none; }
+.testHead { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--foreground); }

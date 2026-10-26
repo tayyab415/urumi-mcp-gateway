@@ -1,0 +1,7 @@
+.page { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+.wrap { width: min(380px, 100%); display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 12px; font-size: 28px; font-weight: 500; letter-spacing: -0.02em; }
+.tag { color: var(--text-muted); margin-top: -12px; }
+.card { width: 100%; display: flex; flex-direction: column; gap: 16px; padding: 24px; }
+.foot { color: var(--text-muted); font-size: var(--text-sm); }
+.hint { font-size: var(--text-xs); color: var(--text-muted); text-align: center; }

@@ -1,0 +1,128 @@
+{{- if .Values.storeSetup.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-store-setup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: store-setup
+data:
+  store-setup.sh: |
+    {{- .Files.Get "files/store-setup.sh" | nindent 4 }}
+  store-setup.php: |
+    {{- .Files.Get "files/store-setup.php" | nindent 4 }}
+  catalog.json: |
+    {{- .Values.storeSetup.catalog | toPrettyJson | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-store-setup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: store-setup
+  annotations:
+    # Helm runs this after every install and upgrade, once the other objects exist.
+    helm.sh/hook: post-install,post-upgrade
+    # Keep the finished Job so its logs stay readable; replace it on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-store.podLabels" . | nindent 8 }}
+        app.kubernetes.io/component: store-setup
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        # www-data in the WordPress image, so WordPress can still edit the files this writes.
+        runAsUser: 33
+        runAsGroup: 33
+        runAsNonRoot: true
+      affinity:
+        # The WordPress volume is ReadWriteOnce: it can only be mounted on one node.
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: {{ .Release.Name }}
+                  app.kubernetes.io/component: wordpress
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: wp-cli
+          image: {{ include "urumi-store.image" .Values.storeSetup.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "/setup/store-setup.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            {{- include "urumi-store.wordpressEnv" . | nindent 12 }}
+            - name: HOME
+              value: /tmp
+            - name: WP_CLI_CACHE_DIR
+              value: /tmp/wp-cli-cache
+            - name: STORE_TITLE
+              value: {{ .Values.storeSetup.title | quote }}
+            - name: STORE_ADMIN_USER
+              value: {{ .Values.storeSetup.admin.username | quote }}
+            - name: STORE_ADMIN_EMAIL
+              value: {{ .Values.storeSetup.admin.email | quote }}
+            - name: STORE_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: wordpress-admin-password
+            # Optional so a Secret made before the REST key existed still installs.
+            - name: STORE_API_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: woo-consumer-key
+                  optional: true
+            - name: STORE_API_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: woo-consumer-secret
+                  optional: true
+            - name: STORE_COUNTRY
+              value: {{ .Values.storeSetup.woocommerce.country | quote }}
+            - name: STORE_CURRENCY
+              value: {{ .Values.storeSetup.woocommerce.currency | quote }}
+            - name: WOOCOMMERCE_VERSION
+              value: {{ .Values.storeSetup.woocommerce.version | quote }}
+          resources:
+            {{- toYaml .Values.storeSetup.resources | nindent 12 }}
+          volumeMounts:
+            - name: content
+              mountPath: /var/www/html
+            - name: setup
+              mountPath: /setup
+              readOnly: true
+            - name: php-config
+              mountPath: /usr/local/etc/php/conf.d/urumi.ini
+              subPath: php.ini
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: content
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-wordpress
+        - name: setup
+          configMap:
+            name: {{ .Release.Name }}-store-setup
+        - name: php-config
+          configMap:
+            name: {{ .Release.Name }}-wordpress
+        - name: tmp
+          emptyDir: {}
+{{- end }}

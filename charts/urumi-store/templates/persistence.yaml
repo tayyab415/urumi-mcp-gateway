@@ -1,0 +1,25 @@
+{{- include "urumi-store.validate" . -}}
+{{- range $component := list "database" "wordpress" }}
+{{- $settings := index $.Values $component }}
+{{- $suffix := ternary "mariadb" "wordpress" (eq $component "database") }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ $suffix }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $suffix }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if ne $settings.persistence.storageClass nil }}
+  storageClassName: {{ $settings.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $settings.persistence.size | quote }}
+{{- end }}

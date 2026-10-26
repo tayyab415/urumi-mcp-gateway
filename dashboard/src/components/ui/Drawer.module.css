@@ -1,0 +1,7 @@
+.backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / 0.45); }
+.panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; width: min(520px, 100vw); background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-floating); display: flex; flex-direction: column; outline: none; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; }
+.title { font-size: 17px; font-weight: 500; }
+.body { flex: 1; overflow: auto; padding: 8px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
+.footer { display: flex; gap: 8px; align-items: center; justify-content: flex-end; padding: 12px 24px 20px; border-top: 1px solid var(--border); }
+@media (max-width: 767px) { .panel { width: 100vw; } }

@@ -1,0 +1,190 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ic := .Values.networkPolicy.ingressController }}
+{{- $private := list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "100.64.0.0/10" "169.254.0.0/16" }}
+{{- $upstreams := list "woo-mcp" "shipping" "supplier" }}
+{{- if .Values.slack.enabled }}{{- $upstreams = append $upstreams "slack-mcp" }}{{- end }}
+# Everything in this namespace starts closed: no connection in, none out.
+# Each policy below opens one path, and Kubernetes adds them together.
+# k3s enforces these with its built-in network policy controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Browsers and MCP clients come in through Traefik, and only to these three.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-from-ingress
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [gateway, chat, dashboard]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $ic.namespace }}}
+          podSelector:
+            matchLabels:
+              {{- toYaml $ic.podLabels | nindent 14 }}
+      ports:
+        - port: http
+---
+{{- if .Values.ingress.tls.enabled }}
+# To get a certificate, cert-manager starts a short-lived "solver" Pod here.
+# The certificate authority fetches a token from it, through Traefik, over
+# plain HTTP. That proves we control the hostname.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-acme-solver
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {acme.cert-manager.io/http01-solver: "true"}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $ic.namespace }}}
+          podSelector:
+            matchLabels:
+              {{- toYaml $ic.podLabels | nindent 14 }}
+      ports:
+        - port: 8089
+---
+{{- end }}
+# The MCP servers accept connections from the gateway and nothing else. This
+# is what "nothing else talks to the upstream servers" rests on: woo-mcp
+# checks no credential of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-upstreams-from-gateway
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: {{ toJson $upstreams }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: gateway}
+      ports:
+        - port: http
+---
+# The gateway: chat calls it from inside; it calls the MCP servers here, and
+# servers an admin adds by a public URL. Private ranges and cloud metadata stay
+# closed, a second layer under the URL check the gateway does at save time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: gateway}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: chat}
+      ports:
+        - port: http
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: {{ toJson $upstreams }}}
+      ports:
+        - port: 8000
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ toJson $private }}
+    {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+---
+# woo-mcp may open connections to WordPress, and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-woo-mcp-to-store
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: woo-mcp}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.store.namespace }}}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.store.wordpressPodLabels | nindent 14 }}
+      ports:
+        - port: 80
+    {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+---
+{{- if .Values.slack.enabled }}
+# slack-mcp may open connections to Slack over HTTPS, and nothing else. NetworkPolicy
+# matches addresses, not hostnames, so this allows public HTTPS and keeps every
+# private range (the other Pods, the node, cloud metadata) closed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-slack-mcp-to-slack
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: slack-mcp}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ toJson $private }}
+      ports:
+        - port: 443
+    {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+{{- end }}
+---
+# Chat may call the gateway, and Bedrock over HTTPS. Nothing else, so it has
+# no path to the MCP servers or the store.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-chat
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: chat}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: gateway}
+      ports:
+        - port: 8080
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ toJson $private }}
+      ports:
+        - port: 443
+    {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+{{- end }}

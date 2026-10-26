@@ -1,0 +1,115 @@
+# Credentials live in a Secret made before install, never in this file.
+# `python3 scripts/create-app-secret.py` writes it; the README lists its keys.
+secretName: urumi-app-secrets
+
+# Image tags come from `bash scripts/gcp-vm.sh build-images`, which writes
+# .runtime/app/images.yaml. Each tag is a hash of that image's source.
+images:
+  gateway: {repository: urumi/gateway, tag: ""}
+  wooMcp: {repository: urumi/woo-mcp, tag: ""}
+  demoMcps: {repository: urumi/demo-mcps, tag: ""}
+  slackMcp: {repository: urumi/slack-mcp, tag: ""}
+  chatAgent: {repository: urumi/chat-agent, tag: ""}
+  dashboard: {repository: urumi/dashboard, tag: ""}
+# Images are imported into the cluster, not pulled from a registry.
+imagePullPolicy: IfNotPresent
+
+# The one browser-facing hostname. The dashboard, its API, chat and /mcp share
+# it, so the login cookie is same-site and Claude Code or Cursor use
+# <publicUrl>/mcp.
+host: app.urumi.test
+publicUrl: http://app.urumi.test
+ingress:
+  className: traefik
+  # Added to the main Ingress only, e.g. cert-manager.io/cluster-issuer.
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+  # Traefik middlewares: an HTTP-to-HTTPS redirect when TLS is on, and rate
+  # limits. Set enabled: false with another ingress controller.
+  traefik:
+    enabled: true
+    rateLimits:
+      # Sign-in attempts, per client address. Behind k3d's load balancer every
+      # client arrives from the same address, so this is one shared limit.
+      login: {average: 20, period: 1m, burst: 10}
+      # Per Authorization header: each API key or chat session has its own
+      # allowance. Requests without the header share one.
+      mcp: {average: 10, period: 1s, burst: 50, header: Authorization}
+      # Each chat turn is a Bedrock call, which costs money.
+      chat: {average: 30, period: 1m, burst: 20, header: Authorization}
+
+store:
+  # WordPress's home URL. woo-mcp signs each request for this URL's host,
+  # because WooCommerce checks the signature against its own home URL.
+  publicUrl: http://shop.urumi.test
+  # Where woo-mcp actually sends requests: the WordPress Service, inside the cluster.
+  apiUrl: http://urumi-wordpress.urumi-store.svc.cluster.local
+  # Used by woo-mcp's egress NetworkPolicy, which allows WordPress and nothing else.
+  namespace: urumi-store
+  wordpressPodLabels:
+    app.kubernetes.io/instance: urumi
+    app.kubernetes.io/component: wordpress
+
+gateway:
+  adminEmail: admin@urumi.test
+  # Only true over HTTPS; a Secure cookie is never sent over plain HTTP.
+  cookieSecure: false
+  upstreamTimeoutSeconds: 10
+  # The servers a fresh install starts with. Applied once, when the gateway's
+  # database has no servers; after that admins manage them in the dashboard.
+  bootstrapServers: [woo, shipping, supplier]
+  storage:
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+
+woo:
+  timeoutSeconds: 15
+  resources:
+    requests: {cpu: 25m, memory: 96Mi}
+    limits: {cpu: 300m, memory: 256Mi}
+
+# shipping and supplier: simulated MCP servers that check a credential, to show
+# the gateway holding one per upstream.
+demoMcps:
+  resources:
+    requests: {cpu: 10m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+
+# Optional: the Slack MCP server. It reads and posts in ONE channel with one shared
+# bot token, so the team needs no Slack accounts of their own. Turn it on in a
+# machine-specific values file, after putting `slack-bot-token` in the Secret
+# (python3 scripts/create-app-secret.py copies it from ~/.urumi/slack.env).
+slack:
+  enabled: false
+  channelId: ""            # the only channel the server may use, e.g. C0CBU62S26P
+  timeoutSeconds: 10
+  resources:
+    requests: {cpu: 10m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+
+chat:
+  # Kimi K3 through Bedrock's US cross-region profile. The Bedrock API key in
+  # the Secret is scoped to this one model.
+  model: us.moonshotai.kimi-k3
+  awsRegion: us-east-1
+  resources:
+    requests: {cpu: 25m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+
+dashboard:
+  resources:
+    requests: {cpu: 5m, memory: 16Mi}
+    limits: {cpu: 100m, memory: 64Mi}
+
+networkPolicy:
+  enabled: true
+  # Where Traefik runs. Only it may open connections to the browser-facing Pods.
+  ingressController:
+    namespace: kube-system
+    podLabels:
+      app.kubernetes.io/name: traefik

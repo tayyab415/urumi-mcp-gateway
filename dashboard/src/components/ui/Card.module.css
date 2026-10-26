@@ -1,0 +1,7 @@
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.padded { padding: 16px; }
+.floating { box-shadow: var(--shadow-pill); }
+.title { font-size: 15px; font-weight: 500; color: var(--foreground); }
+.subtitle { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+.header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.divider { height: 1px; background: var(--border); margin: 0; border: 0; }

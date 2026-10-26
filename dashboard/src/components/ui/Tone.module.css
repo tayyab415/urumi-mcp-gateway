@@ -1,0 +1,5 @@
+.dot { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.dot svg { width: 16px; height: 16px; flex: none; }
+.success { color: var(--success); } .danger { color: var(--danger); } .warning { color: var(--warning); } .neutral { color: var(--text-muted); } .checking { color: var(--text-secondary); }
+.label { color: var(--foreground); }
+.quiet .label { color: var(--text-secondary); }

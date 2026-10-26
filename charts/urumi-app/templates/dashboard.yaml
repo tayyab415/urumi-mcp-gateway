@@ -1,0 +1,63 @@
+{{- $component := "dashboard" }}
+{{- $name := printf "%s-dashboard" .Release.Name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  # Static files only, so any number of replicas works.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # uid 101 is nginx in the unprivileged nginx image.
+        {{- include "urumi-app.podSecurity" 101 | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: {{ include "urumi-app.image" .Values.images.dashboard }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            # nginx keeps its pid file and temporary files in /tmp.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

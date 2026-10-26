@@ -1,0 +1,74 @@
+{{- /* Two simulated MCP servers from one image. Each checks its own credential,
+       so the gateway has to hold one per upstream. */}}
+{{- $servers := list
+  (dict "component" "shipping" "module" "demo_mcps.shipping:app" "env" "SHIPPING_API_TOKEN" "key" "shipping-api-token")
+  (dict "component" "supplier" "module" "demo_mcps.supplier:app" "env" "SUPPLIER_API_KEY" "key" "supplier-api-key") }}
+{{- range $servers }}
+{{- $name := printf "%s-%s" $.Release.Name .component }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" $ "component" .component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" $ "component" .component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: {{ .component }}
+          image: {{ include "urumi-app.image" $.Values.images.demoMcps }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          command: [".venv/bin/uvicorn", {{ .module | quote }}, "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            {{- include "urumi-app.secretEnv" (dict "root" $ "name" .env "key" .key) | nindent 12 }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml $.Values.demoMcps.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" $ | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" $ "component" .component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+{{- end }}

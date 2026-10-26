@@ -1,0 +1,84 @@
+{{- $component := "chat" }}
+{{- $name := printf "%s-chat" .Release.Name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  # One replica: conversations and approvals waiting for a click live in memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: chat-agent
+          image: {{ include "urumi-app.image" .Values.images.chatAgent }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Chat reaches tools only through the gateway, with the user's own
+            # chat token, so its calls are checked and audited as that user.
+            - name: GATEWAY_MCP_URL
+              value: {{ printf "http://%s-gateway:8080/mcp" .Release.Name | quote }}
+            - name: CHAT_MODEL
+              value: {{ .Values.chat.model | quote }}
+            - name: AWS_REGION
+              value: {{ .Values.chat.awsRegion | quote }}
+            - name: HOME
+              value: /tmp
+            # The Bedrock credential: either a Bedrock API key, or an access key
+            # that signs short-lived Bedrock keys. Optional, so the rest of the
+            # system installs before one exists; chat then reports the error.
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "AWS_BEARER_TOKEN_BEDROCK" "key" "bedrock-api-key" "optional" true) | nindent 12 }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "AWS_ACCESS_KEY_ID" "key" "aws-access-key-id" "optional" true) | nindent 12 }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "AWS_SECRET_ACCESS_KEY" "key" "aws-secret-access-key" "optional" true) | nindent 12 }}
+          # /healthz checks neither the gateway nor Bedrock. An outage there is
+          # an error in the chat, not a reason to restart this Pod.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.chat.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

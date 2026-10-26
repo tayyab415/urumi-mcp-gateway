@@ -1,0 +1,67 @@
+{{- /* The only way in from outside the cluster. One hostname; the path decides
+       the Service. Traefik tries the longest matching rule first, so
+       /api/auth/login and /api/chat win over /api.
+
+       There are four Ingresses rather than one because Traefik attaches
+       middlewares (rate limits) per Ingress, and these paths need different
+       limits. All four share the hostname and the certificate. Only the first
+       carries ingress.annotations, so cert-manager sees one owner for the
+       certificate.
+
+       The MCP servers have no route here: only the gateway can reach them. */}}
+{{- $root := . }}
+{{- $traefik := .Values.ingress.traefik }}
+{{- $ingresses := list
+  (dict "name" "app" "annotations" .Values.ingress.annotations "paths" (list
+    (dict "path" "/api" "service" "gateway")
+    (dict "path" "/" "service" "dashboard")))
+  (dict "name" "login" "limit" "login" "paths" (list
+    (dict "path" "/api/auth/login" "type" "Exact" "service" "gateway")))
+  (dict "name" "mcp" "limit" "mcp" "paths" (list
+    (dict "path" "/mcp" "service" "gateway")))
+  (dict "name" "chat" "limit" "chat" "paths" (list
+    (dict "path" "/api/chat" "service" "chat")))
+}}
+{{- range $ingresses }}
+{{- $middlewares := list }}
+{{- if and $traefik.enabled $root.Values.ingress.tls.enabled }}
+{{- $middlewares = append $middlewares (printf "%s-%s-https@kubernetescrd" $root.Release.Namespace $root.Release.Name) }}
+{{- end }}
+{{- if and $traefik.enabled .limit (hasKey $traefik.rateLimits (.limit | default "")) }}
+{{- $middlewares = append $middlewares (printf "%s-%s-%s-limit@kubernetescrd" $root.Release.Namespace $root.Release.Name .limit) }}
+{{- end }}
+{{- $annotations := deepCopy (.annotations | default dict) }}
+{{- if $middlewares }}
+{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" (join "," $middlewares) }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $root.Release.Name }}-{{ .name }}
+  labels:
+    {{- include "urumi-app.labels" $root | nindent 4 }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ $root.Values.ingress.className }}
+  {{- if $root.Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ $root.Values.host | quote }}]
+      secretName: {{ required "ingress.tls.secretName is required when TLS is on" $root.Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $root.Values.host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .type | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $root.Release.Name }}-{{ .service }}
+                port: {name: http}
+          {{- end }}
+{{- end }}

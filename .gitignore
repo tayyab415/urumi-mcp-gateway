@@ -1,0 +1,19 @@
+.runtime/
+.learning/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.pytest_cache/
+.ruff_cache/
+*.db
+# Large generated media and build output; the videos are submitted separately.
+video/out/
+video/public/
+video/build/
+video/archive/
+dashboard/dist/
+docs/dashboard/*.webm
+docs/dashboard/*.mp4
+video/scripts/raw/
+video/scripts/raw-*/

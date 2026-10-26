@@ -1,0 +1,5 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(384px, 1fr)); gap: 24px; }
+.cell { display: grid; gap: 8px; align-content: start; }
+.caption { color: var(--text-muted); font-size: var(--text-xs); }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.h { font-size: 15px; font-weight: 500; margin: 28px 0 12px; }

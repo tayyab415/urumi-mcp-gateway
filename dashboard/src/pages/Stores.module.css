@@ -1,0 +1,12 @@
+.list { display: grid; gap: 12px; }
+.store { padding: 16px; display: grid; gap: 12px; }
+.head { display: flex; align-items: center; gap: 12px; }
+.name { font-size: 15px; font-weight: 500; }
+.host { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+.state { margin-left: auto; }
+.meta { display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--text-xs); }
+.bar { display: flex; gap: 8px; align-items: center; }
+.quota { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: var(--text-sm); }
+.meter { display: flex; gap: 3px; width: 120px; }
+.seg { height: 4px; flex: 1; border-radius: 2px; background: var(--border); }
+.segOn { background: var(--accent); }

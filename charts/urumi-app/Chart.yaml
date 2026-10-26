@@ -1,0 +1,7 @@
+apiVersion: v2
+name: urumi-app
+description: The Urumi MCP gateway, its MCP servers, the chat agent and the dashboard
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"

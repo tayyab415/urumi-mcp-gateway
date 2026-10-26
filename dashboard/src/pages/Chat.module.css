@@ -1,0 +1,7 @@
+.page { display: flex; flex-direction: column; min-height: calc(100vh - 76px); max-width: 48rem; margin: 0 auto; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; color: var(--text-muted); font-size: 13px; }
+.body { flex: 1; }
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; color: var(--text-muted); }
+.emptyTitle { font-size: 20px; font-weight: 500; color: var(--foreground); letter-spacing: -0.015em; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 560px; }
+.composer { position: sticky; bottom: 0; padding: 16px 0 8px; background: linear-gradient(180deg, transparent, var(--background) 30%); }

@@ -1,0 +1,5 @@
+.stack { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow-pill); font-size: var(--text-sm); color: var(--foreground); max-width: 420px; }
+.toast svg { width: 16px; height: 16px; flex: none; }
+.success { color: var(--success); } .danger { color: var(--danger); } .warning { color: var(--warning); } .neutral { color: var(--text-muted); }
+.text { color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
