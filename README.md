@@ -139,7 +139,26 @@ where to look.
 
 ## Run it
 
-**On a laptop, without Kubernetes:**
+**On local Kubernetes (k3d)**, with the local values files only. Needs
+Docker, k3d, Helm and kubectl:
+
+```bash
+python3 scripts/create-store-secret.py   # random passwords and a WooCommerce REST key
+python3 scripts/create-app-secret.py     # gateway key, admin password, upstream tokens
+bash scripts/local-up.sh                 # cluster, images, both charts (about 10 minutes)
+```
+
+**Local domains.** Add `127.0.0.1 shop.urumi.test app.urumi.test` to
+`/etc/hosts`. k3d publishes Traefik on `127.0.0.1:18080`, so the store is
+`http://shop.urumi.test:18080` and the dashboard and `/mcp` are on
+`http://app.urumi.test:18080`. `.test` is reserved for testing and never
+resolves on the internet. Browser sign-in (OAuth) needs https, so locally use
+an API key from the Connect page. `bash scripts/local-up.sh down` removes it
+all. Checked on 2026-10-26 on a fresh k3d cluster: both charts were Ready in
+about 4.5 minutes, and an MCP call went gateway → woo-mcp → WordPress
+([docs/evidence/14-local-k3d-install.txt](docs/evidence/14-local-k3d-install.txt)).
+
+**On a laptop, without Kubernetes** (fastest for working on the code):
 
 ```bash
 bash scripts/dev-stack.sh start   # fake store, MCP servers and gateway

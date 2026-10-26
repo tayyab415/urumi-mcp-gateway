@@ -1,0 +1,13 @@
+### Fresh k3d cluster with the local values files only (2026-10-26T03:00Z)
+# bash scripts/local-up.sh on the VM, as a second cluster "urumi-local" next to the live one,
+# PORT=18090 because 18080 is taken there (values-local.yaml otherwise unchanged); images reused
+# from build-images (SKIP_BUILD=1); Secrets applied over SSH stdin (SKIP_SECRETS=1).
+# Both charts installed and every Pod Ready in about 4.5 minutes:
+urumi-app     chat, dashboard, gateway, shipping, supplier, woo-mcp      Running
+urumi-store   mariadb-0, wordpress Running; store-setup Job Completed
+# Checked through an SSH tunnel to 127.0.0.1:18090:
+--- store http://shop.urumi.test:18090/shop/: HTTP 200, "Showing all 12 results"
+--- gateway servers: shipping=ok, supplier=ok, woo=ok (bootstrapped on first start)
+--- MCP tools/list as admin: 10 tools: shipping__list_carriers, shipping__quote_shipping, supplier__create_purchase_order, supplier__list_products, supplier__quote_restock, woo__create_product, woo__get_order, woo__list_orders, woo__list_products, woo__update_order_status
+--- woo__list_products (gateway -> woo-mcp -> WordPress REST): ok ['Yonex Mavis 350 Shuttles (Tube of 6)', 'Yonex Nanoray Light 18i Racket', 'Molten BG4500 Basketball', 'LA Lakers Icon Jersey']
+# Then the test cluster was deleted (bash scripts/local-up.sh down).
