@@ -75,7 +75,7 @@ connection that is already open.
 `/mcp`, before the MCP layer: it looks the key up by its SHA-256 hash and
 checks that the key is not revoked and the user is active. A chat token is
 accepted only while its login session exists. A refused request gets HTTP 401
-with a JSON-RPC error code of `-32030`. It is not `-32001`, because the MCP SDK
+with a JSON-RPC error code of `-32010`. It is not `-32001`, because the MCP SDK
 uses `-32001` for "request timed out", and chat used to report a revoked key as
 "may have run".
 

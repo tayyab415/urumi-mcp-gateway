@@ -10,3 +10,5 @@ pending_tools on supplier: 1
 refresh: status ok None
 pending_tools on supplier after a second refresh: 0
 [bob@urumi.test] 2 tools: supplier__list_products, supplier__quote_restock
+
+# Note: at the time of this capture the message said "Servers page"; it now says "Permissions page", where the review UI lives.
