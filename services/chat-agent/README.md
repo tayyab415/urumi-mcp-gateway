@@ -80,7 +80,7 @@ Who may answer: the request is tied to the conversation, and the conversation to
 |---|---|
 | Admin disables a server | The next message lists tools fresh, so its tools are gone. A stale call to it is refused by the gateway, and the model is told "did not run". |
 | The model names a tool it wasn't given (disabled before this turn, hidden by role, or made up) | The call never leaves chat. The model gets "There is no tool named … The call did not run" as the tool result and can explain. Without this the SDK would end the turn with an error. The gateway never sees the call, so the chat log records it instead of the audit log. |
-| Key revoked mid-session | The next call gets 401. The model is told "the call did not run". The gateway's 401 carries JSON-RPC code `-32030`; it used to send `-32001`, which the MCP SDK uses for "request timed out", so chat reported the refusal as "may have run". |
+| Key revoked mid-session | The next call gets 401. The model is told "the call did not run". The gateway's 401 carries JSON-RPC code `-32010`; it used to send `-32001`, which the MCP SDK uses for "request timed out", so chat reported the refusal as "may have run". |
 | Tool call times out | The model is told "outcome unknown, may have run, don't retry, offer to check". |
 | Any tool failure | **Never retried.** The SDK can retry a failed MCP call in a fresh session. That's off (`max_retry_attempts=0`), because a retried `create_product` could create two products. |
 | Gateway down or credential bad at turn start | An error event comes back and **no model call is made**, so a stranger can't spend Bedrock money. |
