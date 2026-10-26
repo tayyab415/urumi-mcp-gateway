@@ -1,0 +1,127 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ic := .Values.networkPolicy.ingressController }}
+{{- $gw := .Values.mcp.gateway }}
+{{- $private := list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "100.64.0.0/10" "169.254.0.0/16" }}
+{{- $release := .Release.Name }}
+# Everything in this store's namespace starts closed, in and out. Each policy
+# below opens one path. Nothing here names another store, so a store's Pods,
+# its MCP server included, can reach only their own WordPress and database.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $release }}-default-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Shoppers reach WordPress through Traefik. This store's MCP server calls its REST API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $release }}-wordpress-in
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: wordpress}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $ic.namespace }}}
+          podSelector:
+            matchLabels:
+              {{- toYaml $ic.podLabels | nindent 14 }}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: woo-mcp}
+      ports:
+        - port: http
+---
+# Only this store's WordPress and its setup Job open the database.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $release }}-mariadb-in
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: mariadb}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/instance, operator: In, values: [{{ $release }}]}
+              - {key: app.kubernetes.io/component, operator: In, values: [wordpress, store-setup]}
+      ports:
+        - port: mysql
+---
+# WordPress and the setup Job talk to the database, and to the public internet
+# for plugin and photo downloads. Private ranges stay closed: no other store,
+# no other namespace, no cloud metadata.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $release }}-wordpress-out
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [{{ $release }}]}
+      - {key: app.kubernetes.io/component, operator: In, values: [wordpress, store-setup]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: mariadb}
+      ports:
+        - port: 3306
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ toJson $private }}
+      ports:
+        - port: 80
+        - port: 443
+    {{- include "urumi-store.dnsEgress" . | nindent 4 }}
+---
+{{- if .Values.mcp.enabled }}
+# The store's MCP server: the gateway may connect in; it may connect out only to
+# this store's WordPress. This is the isolation the multi-store bonus asks for.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $release }}-woo-mcp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: woo-mcp}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $gw.namespace }}}
+          podSelector:
+            matchLabels:
+              {{- toYaml $gw.podLabels | nindent 14 }}
+      ports:
+        - port: http
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: {{ $release }}, app.kubernetes.io/component: wordpress}
+      ports:
+        - port: 80
+    {{- include "urumi-store.dnsEgress" . | nindent 4 }}
+{{- end }}
+{{- end }}

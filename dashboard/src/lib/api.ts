@@ -191,7 +191,35 @@ const qs = (params: Record<string, string | number | null | undefined>) => {
   return s ? `?${s}` : "";
 };
 
+export type StorePhase = "Provisioning" | "Ready" | "Failed" | "Deleting";
+
+export interface Store {
+  slug: string;
+  name: string;
+  namespace: string;
+  owner_id: number;
+  owner_email: string;
+  phase: StorePhase;
+  reason: string;
+  url: string;
+  admin_url: string;
+  mcp_url: string;
+  created_at: string | null;
+  ready_at: string | null;
+  deadline: string | null;
+  server_slug: string;
+  registered: boolean;
+  server_status: string | null;
+  mine: boolean;
+  can_delete: boolean;
+}
+
 export const api = {
+  stores: {
+    list: () => http.get<{ stores: Store[] }>("/api/stores"),
+    create: (slug: string, name: string) => http.post<Store>("/api/stores", { slug, name }),
+    remove: (slug: string) => http.del<Store>(`/api/stores/${encodeURIComponent(slug)}`),
+  },
   auth: {
     me: () => http.get<Me>("/api/auth/me"),
     login: (email: string, password: string) => http.post<User>("/api/auth/login", { email, password }),

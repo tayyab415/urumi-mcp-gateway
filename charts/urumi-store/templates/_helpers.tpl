@@ -60,3 +60,14 @@ wp-config.php calls getenv(). The store pod and the setup Job must share them.
     define('WP_MEMORY_LIMIT', '256M');
     define('WP_MAX_MEMORY_LIMIT', '256M');
 {{- end }}
+
+{{- define "urumi-store.dnsEgress" -}}
+- to:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: kube-system}
+      podSelector:
+        matchLabels: {k8s-app: kube-dns}
+  ports:
+    - {port: 53, protocol: UDP}
+    - {port: 53, protocol: TCP}
+{{- end }}

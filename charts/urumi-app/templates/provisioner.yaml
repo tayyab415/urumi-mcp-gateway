@@ -1,0 +1,229 @@
+{{- if .Values.provisioner.enabled }}
+{{- $component := "provisioner" }}
+{{- $name := printf "%s-provisioner" .Release.Name }}
+{{- $tenantRole := printf "%s-store-tenant" .Release.Name }}
+{{- $user := printf "system:serviceaccount:%s:%s" .Release.Namespace $name }}
+# The store provisioner (multi-store bonus). It creates a namespace per store
+# and installs the store chart there with Helm, so it is the one component
+# that talks to the Kubernetes API. Its permissions come in three layers.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+---
+# Layer 1, cluster-wide: make and remove namespaces, and grant itself the
+# tenant role inside one. Nothing else: it cannot read a Secret or touch a
+# Deployment anywhere until a namespace-local binding exists.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [create]
+  # "bind" lets it hand out exactly this one role, without holding it cluster-wide.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    verbs: [bind]
+    resourceNames: [{{ $tenantRole }}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+# Layer 2, per store namespace: what Helm needs to install the store chart.
+# A ClusterRole only defines the rules; each store namespace gets a RoleBinding
+# to it, so the rules apply in that namespace alone.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $tenantRole }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets, services, persistentvolumeclaims, resourcequotas, limitranges]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+# Layer 3, an admission rule the API server checks on every write: the
+# provisioner may only create, change or delete things in namespaces labelled
+# as stores, and may not put that label on a namespace that lacks it. Without
+# this, "create rolebindings" anywhere would let it grant itself the tenant
+# role in this app namespace and read the gateway's Secret.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $name }}-store-namespaces-only
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: ["*/*"]
+        scope: "*"
+  matchConditions:
+    - name: is-the-provisioner
+      expression: request.userInfo.username == {{ $user | squote }}
+  variables:
+    - name: target
+      expression: >-
+        request.resource.resource == 'namespaces'
+          ? (request.operation == 'DELETE' ? oldObject : object)
+          : namespaceObject
+  validations:
+    - expression: >-
+        variables.target != null && has(variables.target.metadata.labels) &&
+        'urumi.io/store' in variables.target.metadata.labels &&
+        variables.target.metadata.labels['urumi.io/store'] == 'true'
+      message: The store provisioner may only change store namespaces (label urumi.io/store=true).
+    - expression: >-
+        !(request.resource.resource == 'namespaces' && request.operation == 'UPDATE') ||
+        (has(oldObject.metadata.labels) && 'urumi.io/store' in oldObject.metadata.labels &&
+         oldObject.metadata.labels['urumi.io/store'] == 'true')
+      message: The store provisioner may not turn an existing namespace into a store namespace.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $name }}-store-namespaces-only
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  policyName: {{ $name }}-store-namespaces-only
+  validationActions: [Deny]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  # One replica: it is the only process running Helm for a store, which is how it
+  # knows a "pending" Helm release was left by a crash and is safe to clear.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      # The one Pod here that needs a Kubernetes token.
+      automountServiceAccountToken: true
+      securityContext:
+        {{- include "urumi-app.podSecurity" 10001 | nindent 8 }}
+      containers:
+        - name: provisioner
+          image: {{ include "urumi-app.image" .Values.images.provisioner }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "PROVISIONER_TOKEN" "key" "provisioner-token") | nindent 12 }}
+            - name: STORE_DOMAIN
+              value: {{ required "provisioner.storeDomain is required" .Values.provisioner.storeDomain | quote }}
+            - name: STORE_ADMIN_EMAIL
+              value: {{ .Values.gateway.adminEmail | quote }}
+            - name: MCP_IMAGE_REPOSITORY
+              value: {{ .Values.images.wooMcp.repository | quote }}
+            - name: MCP_IMAGE_TAG
+              value: {{ .Values.images.wooMcp.tag | quote }}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: SERVICE_ACCOUNT
+              value: {{ $name }}
+            - name: TENANT_CLUSTER_ROLE
+              value: {{ $tenantRole }}
+            - name: MAX_STORES_PER_OWNER
+              value: {{ .Values.provisioner.maxStoresPerUser | quote }}
+            - name: MAX_STORES_TOTAL
+              value: {{ .Values.provisioner.maxStoresTotal | quote }}
+            - name: PROVISION_TIMEOUT_SECONDS
+              value: {{ .Values.provisioner.timeoutSeconds | quote }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          # Ready only while the Kubernetes API answers; without it nothing here works.
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 6
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.provisioner.resources | nindent 12 }}
+          securityContext:
+            {{- include "urumi-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  selector:
+    {{- include "urumi-app.selector" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- end }}

@@ -96,6 +96,11 @@ spec:
             {{- if .Values.slack.enabled }}
             {{- include "urumi-app.secretEnv" (dict "root" . "name" "SLACK_MCP_TOKEN" "key" "slack-mcp-token") | nindent 12 }}
             {{- end }}
+            {{- if .Values.provisioner.enabled }}
+            - name: PROVISIONER_URL
+              value: {{ printf "http://%s-provisioner:8080" .Release.Name | quote }}
+            {{- include "urumi-app.secretEnv" (dict "root" . "name" "PROVISIONER_TOKEN" "key" "provisioner-token") | nindent 12 }}
+            {{- end }}
             - name: PUBLIC_URL
               value: {{ .Values.publicUrl | quote }}
             - name: COOKIE_SECURE

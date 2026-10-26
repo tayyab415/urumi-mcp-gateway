@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowUpRight, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { ConfirmMorph } from "@/arc/confirm-morph";
-import type { Run } from "@/components/run-card/types";
-import { AgentRunCard } from "@/components/run-card/AgentRunCard";
-import { PROVISION_SCRIPT, playScript, type Controls } from "@/lib/scripted-run";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -12,86 +9,121 @@ import { StatusOrb } from "@/components/ui/StatusOrb";
 import { ToneLabel } from "@/components/ui/ToneLabel";
 import { Field, Input } from "@/components/ui/Field";
 import { Drawer } from "@/components/ui/Drawer";
+import { api, type Store } from "@/lib/api";
+import { relTime } from "@/lib/format";
+import { useResource } from "@/state/resource";
+import { useAuth } from "@/state/auth";
 import { cx } from "@/lib/cx";
 import styles from "./Stores.module.css";
 
-interface Store { id: string; name: string; host: string; state: "ready" | "provisioning" | "failed"; createdAt: number; run?: Run; real?: boolean }
+const PER_USER = 2;
 
-const QUOTA = 5;
-const REAL_STORE: Store = { id: "urumi-store", name: "Urumi store", host: "shop.urumi.test:18080", state: "ready", createdAt: Date.now() - 3 * 86400000, real: true };
+const toSlug = (name: string) =>
+  name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[0-9-]+/, "").slice(0, 20).replace(/-+$/, "");
 
-/** The bonus multi-store page. The provisioning run card is the first reference card doing what it is for:
- *  a background job with a known number of steps. Provisioning itself is simulated here and says so. */
+const orb = (s: Store) => (s.phase === "Ready" ? (s.reason ? "failed" : "done") : s.phase === "Failed" ? "failed" : "running");
+const tone = (s: Store) => (s.phase === "Ready" ? (s.reason ? "warning" : "success") : s.phase === "Failed" ? "danger" : "checking");
+
+/** The multi-store bonus. Each store is a real Helm release in its own namespace, made by the store
+ *  provisioner. When it is Ready, the gateway registers its MCP server as `store-<name>` by itself. */
 export function StoresPage() {
-  const [stores, setStores] = useState<Store[]>([REAL_STORE]);
+  const { me } = useAuth();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const controls = useRef<Record<string, Controls>>({});
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => () => Object.values(controls.current).forEach((c) => c.dispose()), []);
+  const stores = useResource(() => api.stores.list().then((r) => r.stores), [], { interval: 3000 });
+  const list = stores.data ?? [];
+  const mine = list.filter((s) => s.mine && s.phase !== "Deleting").length;
+  const firstStore = useMemo(() => window.location.host.replace(/^app\./, "shop."), []);
 
-  function create() {
-    const id = `s${Date.now()}`;
-    const host = `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "store"}.urumi.test`;
-    setStores((s) => [...s, { id, name: name.trim(), host, state: "provisioning", createdAt: Date.now() }]);
-    setExpanded(id);
-    controls.current[id] = playScript(PROVISION_SCRIPT, "Provisioner (simulated)", (run) => {
-      setStores((s) => s.map((x) => (x.id === id ? { ...x, run, state: run.status === "done" ? "ready" : run.status === "failed" || run.status === "stopped" ? "failed" : "provisioning" } : x)));
-    }, { summary: (r) => `Done in ${Math.round(((r.endedAt ?? Date.now()) - r.startedAt - (r.pausedMs ?? 0)) / 1000)}s · store ready`, failAt: name.trim().toLowerCase().includes("fail") ? 1 : undefined });
-    setAdding(false);
-    setName("");
+  async function create(retrySlug?: string, retryName?: string) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.stores.create(retrySlug ?? slug, retryName ?? name.trim());
+      setAdding(false);
+      setName(""); setSlug(""); setSlugEdited(false);
+      await stores.reload();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  const used = stores.length;
   return (
     <>
       <PageHeader
         title="Stores"
-        subtitle={<span className={styles.quota}><span>{used} of {QUOTA} stores used</span><span className={styles.meter}>{Array.from({ length: QUOTA }, (_, i) => <span key={i} className={cx(styles.seg, i < used && styles.segOn)} />)}</span></span>}
-        actions={<Button variant="primary" icon={<Plus />} disabled={used >= QUOTA} onClick={() => setAdding(true)}>Create store</Button>}
+        subtitle={<span className={styles.quota}><span>{mine} of {PER_USER} of your stores used</span><span className={styles.meter}>{Array.from({ length: PER_USER }, (_, i) => <span key={i} className={cx(styles.seg, i < mine && styles.segOn)} />)}</span></span>}
+        actions={<Button variant="primary" icon={<Plus />} disabled={mine >= PER_USER} onClick={() => { setProblem(null); setAdding(true); }}>Create store</Button>}
       />
-      <Alert tone="warning" title="Provisioning is simulated on this page" className="">
-        The first store is the real Helm release from <code>charts/urumi-store</code>. New stores here run a scripted provisioning job so the run card can be judged with real timers; no namespace is created. Name a store with "fail" in it to see the failed state.
-      </Alert>
+      {stores.error && <Alert tone="danger" title="Could not load stores">{stores.error}</Alert>}
+      {problem && !adding && <Alert tone="danger" title="That did not work">{problem}</Alert>}
       <div className={styles.list} style={{ marginTop: 12 }}>
-        {stores.map((s) => (
-          <Card key={s.id} className={styles.store}>
+        <Card className={styles.store}>
+          <div className={styles.head}>
+            <StatusOrb state="done" size={26} glyph={false} />
+            <span className={styles.name}>Urumi Sports</span>
+            <span className={styles.host}>{firstStore}</span>
+            <span className={styles.state}><ToneLabel tone="success" quiet>Ready</ToneLabel></span>
+          </div>
+          <div className={styles.meta}>
+            <span>The first store: Helm release <code>urumi</code> in namespace <code>urumi-store</code>. Its tools are <code>woo__*</code>.</span>
+            <span>Installed with Helm, not managed here</span>
+          </div>
+          <div className={styles.bar}>
+            <Button icon={<ArrowUpRight />} onClick={() => window.open(`${window.location.protocol}//${firstStore}/`, "_blank")}>Storefront</Button>
+          </div>
+        </Card>
+        {list.map((s) => (
+          <Card key={s.slug} className={styles.store}>
             <div className={styles.head}>
-              <StatusOrb state={s.state === "ready" ? "done" : s.state === "failed" ? "failed" : "running"} size={26} glyph={false} />
+              <StatusOrb state={orb(s)} size={26} glyph={false} />
               <span className={styles.name}>{s.name}</span>
-              <span className={styles.host}>{s.host}</span>
-              <span className={styles.state}><ToneLabel tone={s.state === "ready" ? "success" : s.state === "failed" ? "danger" : "checking"} quiet>{s.state === "ready" ? "Ready" : s.state === "failed" ? "Failed" : "Provisioning"}</ToneLabel></span>
+              <span className={styles.host}>{s.url.replace(/^https?:\/\//, "")}</span>
+              <span className={styles.state}><ToneLabel tone={tone(s)} quiet>{s.phase === "Ready" && s.reason ? "Degraded" : s.phase}</ToneLabel></span>
             </div>
-            {s.run && s.state !== "ready" ? (
-              <AgentRunCard
-                run={s.run}
-                expanded={expanded === s.id}
-                onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
-                onPause={() => controls.current[s.id]?.pause()}
-                onResume={() => controls.current[s.id]?.resume()}
-                onStop={() => controls.current[s.id]?.stop()}
-                onRetry={() => { controls.current[s.id]?.dispose(); setStores((xs) => xs.filter((x) => x.id !== s.id)); setName(s.name.replace(/fail/i, "retry")); setTimeout(create, 0); }}
-              />
-            ) : (
-              <div className={styles.meta}>
-                <span>Created {Math.round((Date.now() - s.createdAt) / 86400000) || "today"}{Math.round((Date.now() - s.createdAt) / 86400000) ? " days ago" : ""}</span>
-                <span>{s.real ? "WordPress + WooCommerce + MariaDB on Kubernetes" : "simulated"}</span>
-              </div>
-            )}
-            {s.state === "ready" && (
-              <div className={styles.bar}>
-                <Button icon={<ArrowUpRight />} onClick={() => window.open(`http://${s.host}/`, "_blank")}>Storefront</Button>
-                <Button icon={<ArrowUpRight />} onClick={() => window.open(`http://${s.host}/wp-admin/`, "_blank")}>WP admin</Button>
-                {!s.real && <ConfirmMorph label="Delete" icon={<Trash2 size={16} strokeWidth={1.75} />} prompt={`Delete ${s.name}?`} confirmMode="countdown" countdown={3} confirmLabel="Delete" pendingLabel="Deleting" doneLabel="Deleted" onConfirm={() => { setStores((xs) => xs.filter((x) => x.id !== s.id)); }} />}
-              </div>
-            )}
+            {s.reason && s.phase !== "Deleting" && <div className={cx(styles.reason, s.phase === "Failed" && styles.reasonBad)}>{s.reason}</div>}
+            <div className={styles.meta}>
+              <span>
+                Namespace <code>{s.namespace}</code> · created {relTime(s.created_at)} by {s.mine ? "you" : s.owner_email}
+                {s.ready_at && s.created_at && <> · ready in {Math.max(1, Math.round((Date.parse(s.ready_at) - Date.parse(s.created_at)) / 60000))} min</>}
+              </span>
+              <span>
+                {s.registered ? <>Tools <code>{s.server_slug}__*</code> · {s.server_status ?? "registered"}</> : s.phase === "Ready" ? "Registering its MCP server" : "Tools appear when it is ready"}
+              </span>
+            </div>
+            <div className={styles.bar}>
+              {s.phase === "Ready" && <Button icon={<ArrowUpRight />} onClick={() => window.open(s.url, "_blank")}>Storefront</Button>}
+              {s.phase === "Ready" && <Button icon={<ArrowUpRight />} onClick={() => window.open(s.admin_url, "_blank")}>WP admin</Button>}
+              {s.phase === "Failed" && s.mine && <Button icon={<RotateCcw />} disabled={busy} onClick={() => void create(s.slug, s.name)}>Retry</Button>}
+              {s.can_delete && s.phase !== "Deleting" && (
+                <ConfirmMorph label="Delete" icon={<Trash2 size={16} strokeWidth={1.75} />} prompt={`Delete ${s.name} and its data?`} confirmMode="countdown" countdown={3}
+                  confirmLabel="Delete" pendingLabel="Deleting" doneLabel="Deleting"
+                  onConfirm={async () => { try { await api.stores.remove(s.slug); } catch (e) { setProblem(e instanceof Error ? e.message : String(e)); } await stores.reload(); }} />
+              )}
+            </div>
           </Card>
         ))}
+        {!stores.loading && list.length === 0 && (
+          <div className={styles.empty}>No extra stores yet. Each one you create gets its own namespace, database, volumes, Secret, address and MCP server.</div>
+        )}
       </div>
-      <Drawer open={adding} onClose={() => setAdding(false)} title="Create store" footer={<><Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" disabled={!name.trim()} onClick={create}>Create store</Button></>}>
-        <Field label="Store name" hint="The host is derived from it.">{(id) => <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Atlas Coffee" autoFocus onKeyDown={(e) => e.key === "Enter" && name.trim() && create()} />}</Field>
-        <Alert>Simulated. A real provisioner would run the six steps shown on the card: namespace, database, WordPress, WooCommerce, seed data, health checks.</Alert>
+      <Drawer open={adding} onClose={() => setAdding(false)} title="Create store"
+        footer={<><Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" disabled={!name.trim() || slug.length < 2 || busy} onClick={() => void create()}>{busy ? "Creating" : "Create store"}</Button></>}>
+        <Field label="Store name">{(id) => <Input id={id} value={name} maxLength={40} autoFocus placeholder="North Sports"
+          onChange={(e) => { setName(e.target.value); if (!slugEdited) setSlug(toSlug(e.target.value)); }} />}</Field>
+        <Field label="Short name" hint={`Its address and tool prefix: ${slug || "north"}.${window.location.host.replace(/^app\./, "")} and store-${slug || "north"}__list_orders.`}>
+          {(id) => <Input id={id} value={slug} maxLength={20} placeholder="north" onChange={(e) => { setSlugEdited(true); setSlug(e.target.value.toLowerCase()); }}
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && slug.length >= 2 && void create()} />}
+        </Field>
+        {problem && <Alert tone="danger">{problem}</Alert>}
+        <Alert>Takes a few minutes: Kubernetes makes a namespace, a database, WordPress with WooCommerce, and this store's MCP server. You can make {PER_USER} stores{me?.role === "admin" ? "; as an admin you can delete anyone's" : ""}.</Alert>
       </Drawer>
     </>
   );

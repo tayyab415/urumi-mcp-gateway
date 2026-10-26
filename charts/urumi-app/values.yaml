@@ -11,6 +11,7 @@ images:
   slackMcp: {repository: urumi/slack-mcp, tag: ""}
   chatAgent: {repository: urumi/chat-agent, tag: ""}
   dashboard: {repository: urumi/dashboard, tag: ""}
+  provisioner: {repository: urumi/provisioner, tag: ""}
 # Images are imported into the cluster, not pulled from a registry.
 imagePullPolicy: IfNotPresent
 
@@ -105,6 +106,27 @@ dashboard:
   resources:
     requests: {cpu: 5m, memory: 16Mi}
     limits: {cpu: 100m, memory: 64Mi}
+
+# Optional: the store provisioner (multi-store bonus). Users create and delete
+# extra stores from the dashboard; each gets its own namespace, database,
+# volumes, Secret, Ingress host and WooCommerce MCP server, which the gateway
+# registers by itself.
+provisioner:
+  enabled: false
+  # New stores get http://<name>.<storeDomain>/.
+  storeDomain: ""
+  maxStoresPerUser: 2
+  maxStoresTotal: 4
+  # A store not ready by then is marked Failed, with the reason.
+  timeoutSeconds: 900
+  # Where the Kubernetes API server really listens (kubectl get endpoints
+  # kubernetes). NetworkPolicy sees that address, not the Service's.
+  apiServer:
+    cidr: ""
+    port: 6443
+  resources:
+    requests: {cpu: 25m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 384Mi}
 
 networkPolicy:
   enabled: true

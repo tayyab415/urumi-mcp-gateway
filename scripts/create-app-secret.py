@@ -24,6 +24,8 @@ GENERATED = {
     "supplier-api-key": lambda: secrets.token_urlsafe(32),
     # What the gateway sends to slack-mcp. Unused until `slack.enabled` is set in the chart.
     "slack-mcp-token": lambda: secrets.token_urlsafe(32),
+    # What the gateway sends to the store provisioner (the multi-store bonus).
+    "provisioner-token": lambda: secrets.token_urlsafe(32),
 }
 COPIED_FROM_STORE = ("woo-consumer-key", "woo-consumer-secret")
 # The Slack bot token lives in a private file outside the repo (infra/slack/README.md).

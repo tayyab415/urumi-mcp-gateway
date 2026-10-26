@@ -1,0 +1,104 @@
+{{- if .Values.mcp.enabled }}
+{{- /*
+This store's own WooCommerce MCP server, in the store's namespace. The store
+provisioner turns it on for every store it creates, and the gateway registers
+it as an upstream. Only the gateway may connect to it (networkpolicy.yaml).
+*/}}
+{{- $name := printf "%s-woo-mcp" .Release.Name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: woo-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: woo-mcp
+  template:
+    metadata:
+      labels:
+        {{- include "urumi-store.podLabels" . | nindent 8 }}
+        app.kubernetes.io/component: woo-mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: woo-mcp
+          image: {{ printf "%s:%s" .Values.mcp.image.repository .Values.mcp.image.tag | quote }}
+          imagePullPolicy: {{ .Values.mcp.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Calls go to WordPress over plain HTTP inside the namespace, and
+            # WooCommerce checks the OAuth 1.0a signature against its home URL
+            # with that scheme. Same reasoning as the app chart's woo-mcp.
+            - name: WOO_STORE_URL
+              value: {{ regexReplaceAll "^https://" .Values.wordpress.publicUrl "http://" | quote }}
+            - name: WOO_AUTH
+              value: oauth1
+            - name: WOO_API_URL
+              value: {{ printf "http://%s-wordpress.%s.svc.cluster.local" .Release.Name .Release.Namespace | quote }}
+            - name: WOO_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: woo-consumer-key
+            - name: WOO_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: woo-consumer-secret
+            - name: WOO_TIMEOUT_SECONDS
+              value: {{ .Values.mcp.timeoutSeconds | quote }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: woo-mcp
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: woo-mcp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+{{- end }}

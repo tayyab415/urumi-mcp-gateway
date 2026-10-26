@@ -35,6 +35,10 @@ class Settings:
     # A JSON list in the shape of POST /api/servers, registered once on a gateway
     # that has no servers yet. In the cluster it is a mounted Secret file.
     bootstrap_servers_file: str | None = None
+    # The store provisioner (multi-store bonus). Unset: no Stores API.
+    provisioner_url: str | None = None
+    provisioner_token: str | None = None
+    store_sync_interval_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -53,4 +57,7 @@ class Settings:
             default_timeout_seconds=float(os.environ.get("DEFAULT_UPSTREAM_TIMEOUT_SECONDS", "10")),
             allow_loopback_upstreams=_bool("ALLOW_LOOPBACK_UPSTREAMS", False),
             bootstrap_servers_file=os.environ.get("BOOTSTRAP_SERVERS_FILE") or None,
+            provisioner_url=os.environ.get("PROVISIONER_URL") or None,
+            provisioner_token=os.environ.get("PROVISIONER_TOKEN") or None,
+            store_sync_interval_seconds=float(os.environ.get("STORE_SYNC_INTERVAL_SECONDS", "5")),
         )

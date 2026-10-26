@@ -191,6 +191,7 @@ def server_out(s: Server, tool_count: int) -> dict[str, Any]:
         "has_credential": bool(s.credential_enc),
         "timeout_seconds": s.timeout_seconds,
         "forward_identity": s.forward_identity,
+        "managed_by": s.managed_by,
         "status": "disabled" if not s.enabled else s.status,
         "health": s.status,
         "last_error": s.last_error,
@@ -487,6 +488,8 @@ def build_router(settings: Settings) -> APIRouter:
             server = await s.get(Server, server_id)
             if server is None:
                 raise HTTPException(404, "No such server")
+            if server.managed_by and (body.url is not None or body.auth_type is not None or body.credential or body.clear_credential):
+                raise HTTPException(409, "This server belongs to a provisioned store; its connection is managed for you. You can still disable it.")
             connection_changed = False
             if body.name is not None:
                 server.name = body.name
@@ -522,6 +525,8 @@ def build_router(settings: Settings) -> APIRouter:
             server = await s.get(Server, server_id, options=[selectinload(Server.tools)])
             if server is None:
                 raise HTTPException(404, "No such server")
+            if server.managed_by:
+                raise HTTPException(409, "This server belongs to a provisioned store. Delete the store on the Stores page instead.")
             await s.delete(server)
             await s.commit()
         return {"ok": True}

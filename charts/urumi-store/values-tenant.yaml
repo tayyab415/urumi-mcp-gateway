@@ -1,0 +1,30 @@
+# Values the store provisioner adds for every store it creates, on top of
+# values.yaml. It also sets the per-store values: the hostname, the public URL,
+# the title, the Secret name and the MCP image tag.
+storeSetup:
+  hook: false
+  # A short catalog without photos, so a new store is ready in a few minutes.
+  catalog:
+    version: starter-v1
+    categories: [Football, Cricket]
+    products:
+      - {name: Training Football (Size 5), sku: TRAIN-BALL-5, category: Football, price: "1499", description: Machine-stitched training ball., stock: 30}
+      - {name: Shin Guards, sku: SHIN-GUARD, category: Football, price: "899", description: Lightweight shin guards with ankle straps., stock: 20}
+      - {name: Tennis Ball Cricket Bat, sku: TB-BAT, category: Cricket, price: "1299", description: Popular-willow bat for tennis-ball cricket., stock: 12}
+      - {name: Cricket Batting Gloves, sku: BAT-GLOVES, category: Cricket, price: "1599", description: Pair of padded batting gloves., stock: 10}
+database:
+  persistence: {size: 2Gi}
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {cpu: "1", memory: 768Mi}
+wordpress:
+  persistence: {size: 2Gi}
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+mcp:
+  enabled: true
+networkPolicy:
+  enabled: true
+guardrails:
+  enabled: true

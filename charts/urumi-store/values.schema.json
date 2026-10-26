@@ -264,6 +264,9 @@
               }
             }
           }
+        },
+        "hook": {
+          "type": "boolean"
         }
       }
     },
@@ -311,6 +314,101 @@
         },
         "redirectToHttps": {
           "type": "boolean"
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            }
+          }
+        },
+        "imagePullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        },
+        "timeoutSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "gateway": {
+          "type": "object",
+          "required": [
+            "namespace",
+            "podLabels"
+          ],
+          "properties": {
+            "namespace": {
+              "type": "string"
+            },
+            "podLabels": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ingressController": {
+          "type": "object",
+          "required": [
+            "namespace",
+            "podLabels"
+          ],
+          "properties": {
+            "namespace": {
+              "type": "string"
+            },
+            "podLabels": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "guardrails": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "quota": {
+          "type": "object"
+        },
+        "containerLimits": {
+          "type": "object"
         }
       }
     }

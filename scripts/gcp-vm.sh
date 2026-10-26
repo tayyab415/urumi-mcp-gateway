@@ -159,9 +159,17 @@ YAML
     # hash of that image's source: changed code gets a new tag, so helm upgrade
     # replaces the Pods, and an unchanged image keeps its tag.
     images=(gateway:services/gateway woo-mcp:services/woo-mcp demo-mcps:services/demo-mcps
-            chat-agent:services/chat-agent dashboard:dashboard slack-mcp:services/slack-mcp)
+            chat-agent:services/chat-agent dashboard:dashboard slack-mcp:services/slack-mcp
+            provisioner:.runtime/build/provisioner)
     staging="$(mktemp -d)"
     trap 'rm -rf "$staging"' EXIT
+    # The provisioner installs every new store from the store chart, so its image
+    # carries a copy. Assemble that build context first.
+    rm -rf "$project_root/.runtime/build/provisioner"
+    mkdir -p "$project_root/.runtime/build"
+    cp -r "$project_root/services/provisioner" "$project_root/.runtime/build/provisioner"
+    rm -rf "$project_root/.runtime/build/provisioner/chart"
+    cp -r "$project_root/charts/urumi-store" "$project_root/.runtime/build/provisioner/chart"
     tar_flags=(--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
                --exclude=.venv --exclude=node_modules --exclude=dist --exclude=__pycache__
                --exclude=.pytest_cache --exclude=.ruff_cache --exclude='*.db')

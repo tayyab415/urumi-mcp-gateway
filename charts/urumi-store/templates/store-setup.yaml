@@ -23,11 +23,13 @@ metadata:
   labels:
     {{- include "urumi-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: store-setup
+  {{- if .Values.storeSetup.hook }}
   annotations:
     # Helm runs this after every install and upgrade, once the other objects exist.
     helm.sh/hook: post-install,post-upgrade
     # Keep the finished Job so its logs stay readable; replace it on the next run.
     helm.sh/hook-delete-policy: before-hook-creation
+  {{- end }}
 spec:
   backoffLimit: 2
   activeDeadlineSeconds: 900

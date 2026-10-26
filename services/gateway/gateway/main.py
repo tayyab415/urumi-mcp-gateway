@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text
 
-from gateway import api
+from gateway import api, stores
 from gateway.config import Settings
 from gateway.core import Gateway
 from gateway.db import Database, Server, User
@@ -102,6 +102,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     gateway = Gateway(db, CredentialBox(settings.secret_key))
     chat_tokens = ChatTokens(settings.secret_key)
     mcp_app, mcp_manager = mcp_asgi_app(gateway, db, chat_tokens)
+    provisioner = (
+        stores.Provisioner(settings.provisioner_url, settings.provisioner_token)
+        if settings.provisioner_url and settings.provisioner_token else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -111,6 +115,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with mcp_manager.run(), anyio.create_task_group() as tg:
             if settings.refresh_interval_seconds > 0:
                 tg.start_soon(refresh_forever, gateway, settings.refresh_interval_seconds)
+            if provisioner is not None:
+                tg.start_soon(stores.sync_forever, db, gateway, provisioner, settings.store_sync_interval_seconds)
             yield
             tg.cancel_scope.cancel()
         await db.dispose()
@@ -119,10 +125,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   openapi_url="/api/openapi.json", redoc_url=None)
     app.state.settings, app.state.db, app.state.gateway = settings, db, gateway
     app.state.chat_tokens = chat_tokens
+    app.state.provisioner = provisioner
 
     app.add_route("/mcp", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
     app.add_route("/mcp/", mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
     api.install(app, settings)
+    app.include_router(stores.build_router())
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

@@ -110,6 +110,21 @@ spec:
               - {key: app.kubernetes.io/component, operator: In, values: {{ toJson $upstreams }}}
       ports:
         - port: 8000
+    {{- if .Values.provisioner.enabled }}
+    # Each provisioned store's own MCP server, in that store's namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels: {urumi.io/store: "true"}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: woo-mcp}
+      ports:
+        - port: 8000
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: provisioner}
+      ports:
+        - port: 8080
+    {{- end }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -187,4 +202,33 @@ spec:
       ports:
         - port: 443
     {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+{{- if .Values.provisioner.enabled }}
+---
+# The provisioner: only the gateway may call it, and it may call only the
+# Kubernetes API server. It never talks to a store directly; it reads Pod and
+# Job status from the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-provisioner
+  labels:
+    {{- include "urumi-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/component: provisioner}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/component: gateway}
+      ports:
+        - port: http
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ required "provisioner.apiServer.cidr is required" .Values.provisioner.apiServer.cidr }}
+      ports:
+        - port: {{ .Values.provisioner.apiServer.port }}
+    {{- include "urumi-app.dnsEgress" . | nindent 4 }}
+{{- end }}
 {{- end }}

@@ -10,3 +10,6 @@
 .meter { display: flex; gap: 3px; width: 120px; }
 .seg { height: 4px; flex: 1; border-radius: 2px; background: var(--border); }
 .segOn { background: var(--accent); }
+.reason { font-size: var(--text-xs); color: var(--text-muted); font-family: var(--font-mono); line-height: 1.5; }
+.reasonBad { color: var(--danger, #c0392b); }
+.empty { color: var(--text-muted); font-size: var(--text-sm); padding: 8px 2px; }

@@ -1,0 +1,28 @@
+{{- if .Values.guardrails.enabled }}
+# A ceiling for the whole namespace, so one store cannot starve the others or
+# the platform. Kubernetes refuses a new Pod or volume that would go over it.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ .Release.Name }}-quota
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  hard:
+    {{- toYaml .Values.guardrails.quota | nindent 4 }}
+---
+# Defaults for any container that does not say what it needs, and a per-container
+# maximum. With a quota on, a container without limits would otherwise be refused.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ .Release.Name }}-limits
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "urumi-store.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      {{- toYaml .Values.guardrails.containerLimits | nindent 6 }}
+{{- end }}

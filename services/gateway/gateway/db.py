@@ -98,6 +98,9 @@ class Server(Base):
     # Off by default: when on, each call carries the caller's display name (never the email),
     # so the upstream can show who asked. Only for upstreams the team runs or trusts.
     forward_identity: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # "provisioner" for a store's MCP server that the gateway registered by itself;
+    # it is removed with its store. None for servers an admin added.
+    managed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Health, as last observed by discovery or a call.
     status: Mapped[str] = mapped_column(String(16), default="unknown")  # unknown | ok | down | auth_failed
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

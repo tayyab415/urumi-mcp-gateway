@@ -39,10 +39,14 @@ wordpress:
       cpu: "1"
       memory: 1Gi
 
-# A Job that Helm runs after every install and upgrade. It installs WordPress
-# and WooCommerce, then applies these settings. Rerunning it is safe.
+# A Job that installs WordPress and WooCommerce, then applies these settings.
+# Rerunning it is safe.
 storeSetup:
   enabled: true
+  # true: a Helm hook, run after every install and upgrade, and `helm install
+  # --wait` waits for it. false: an ordinary Job that `helm install` creates and
+  # returns; the store provisioner uses this and watches the Job itself.
+  hook: true
   image:
     repository: docker.io/library/wordpress
     tag: "cli-2.12.0-php8.3"
@@ -232,3 +236,44 @@ ingress:
     secretName: ""
   # Traefik only, and only with TLS on: redirect plain HTTP to HTTPS.
   redirectToHttps: false
+
+# ---------------------------------------------------------------------------
+# Settings for stores made by the store provisioner (the multi-store bonus).
+# All off by default, so the first store installs exactly as before.
+
+# This store's own WooCommerce MCP server, in the store's namespace.
+mcp:
+  enabled: false
+  image: {repository: urumi/woo-mcp, tag: ""}
+  imagePullPolicy: IfNotPresent
+  timeoutSeconds: 15
+  resources:
+    requests: {cpu: 25m, memory: 96Mi}
+    limits: {cpu: 300m, memory: 256Mi}
+  # The only Pods allowed to connect to it.
+  gateway:
+    namespace: urumi-app
+    podLabels: {app.kubernetes.io/component: gateway}
+
+# Deny by default inside the namespace, then open only the store's own paths.
+networkPolicy:
+  enabled: false
+  ingressController:
+    namespace: kube-system
+    podLabels: {app.kubernetes.io/name: traefik}
+
+# ResourceQuota and LimitRange for the namespace.
+guardrails:
+  enabled: false
+  quota:
+    requests.cpu: "1"
+    requests.memory: 1536Mi
+    limits.cpu: "4"
+    limits.memory: 3Gi
+    pods: "6"
+    persistentvolumeclaims: "2"
+    requests.storage: 6Gi
+  containerLimits:
+    default: {cpu: 500m, memory: 256Mi}
+    defaultRequest: {cpu: 25m, memory: 64Mi}
+    max: {cpu: "1", memory: 1Gi}
