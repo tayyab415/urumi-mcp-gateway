@@ -59,7 +59,7 @@ who may connect.
 | 7 | A member calls an admin-only tool | The gateway hides the tool from the member's list and refuses a direct call, recording it as `denied`. Chat sees the same list. | None found. Checked live with four simulated members. |
 | 8 | A member reads another member's activity | Members see only their own audit rows. Conversations belong to a hash of their owner's credential: Bob couldn't continue Ana's conversation or approve its held calls. | All members share the store's data. Anyone with `list_orders` sees every customer's order. That is the job, but it should be said. |
 | 9 | Someone inside the cluster calls `woo-mcp` directly, skipping roles and audit | `woo-mcp` checks no credential of its own, so a NetworkPolicy is the guard: only the gateway may connect. Shipping, supplier and Slack also each check a token from the gateway. | If NetworkPolicy enforcement stopped (another CNI, a misconfiguration), `woo-mcp` would be open inside the cluster. A shared secret between the gateway and `woo-mcp` would be a second layer. |
-| 10 | An admin adds a server whose URL points at internal addresses or cloud metadata (SSRF) | The URL is checked when it is saved: loopback, private ranges and `169.254.169.254` are refused. The gateway's NetworkPolicy also blocks private ranges, which also covers a DNS name that later resolves to an internal address. The VM has no Google service account, so metadata holds no credentials. | None found. |
+| 10 | An admin adds a server whose URL points at internal addresses or cloud metadata (SSRF) | The URL is checked when it is saved and again right before every connection: loopback, link-local and cloud metadata (including `::ffff:169.254.169.254`), carrier-grade NAT and reserved ranges are refused. The gateway's NetworkPolicy also blocks private ranges, which also covers a DNS name that later resolves to an internal address. The VM has no Google service account, so metadata holds no credentials. | None found. |
 | 11 | A stolen copy of the gateway database | Passwords and keys are hashed. Upstream credentials are encrypted, and the key lives in a Kubernetes Secret, not in the database. | Anyone with root on the VM can read both the database and the Secret. |
 | 12 | Root on the VM | SSH is open only to the coding workspace's IP and Google's IAP range. The Kubernetes API listens on loopback only. | k3s keeps Secrets in its datastore without encryption at rest (`--secrets-encryption` is off). Root on the VM sees every credential. |
 | 13 | A compromised container | The Pod Security Standard is "restricted": non-root, no privilege escalation, no Linux capabilities, read-only root filesystem. Each Pod has only its own Secret keys and only the network paths it needs. | A compromised gateway holds the encryption key and every upstream credential. It is the most valuable target. |
@@ -68,9 +68,7 @@ who may connect.
 ## Browser sign-in for MCP clients (OAuth)
 
 The gateway issues its own tokens to Claude Code, Cursor and similar apps after
-a person presses Allow. How it works: [design.md, section 13](design.md). This
-section describes the code in the repository, tested locally. It is not on the
-VM yet.
+a person presses Allow. How it works: [design.md, section 13](design.md).
 
 | # | Threat | What stops it | What is left |
 |---|---|---|---|
@@ -110,23 +108,32 @@ What limits the damage:
 - **Labels.** Each tool description starts with its server's name, so an
   upstream can't pass its tool off as another server's.
 
+- **Tool pinning** ([design.md, section 15](design.md)). Each tool's
+  description, schemas and hints are hashed when an admin first connects the
+  server. If the upstream later changes any of them, or adds a tool, that tool
+  is hidden from everyone and calls to it are refused until an admin compares
+  the old and new text on the Permissions page and approves it. A tool added
+  later starts admin-only. Invisible characters, a known way to hide
+  instructions from a person while the model still reads them, are stripped,
+  and their presence holds the tool.
+- **Size limits.** Descriptions are cut at 1,500 characters and tool results
+  at 256,000, with a visible note, so one upstream cannot flood the model's
+  context.
+
 Checked on the VM: a planted Slack message told the assistant to cancel an
-order, and it ignored it.
+order, and it ignored it. Pinning is covered by `tests/test_pinning.py`; the
+supplier demo server's `SUPPLIER_COMPROMISED=1` switch rewrites one of its
+descriptions into an injection, to show the hold live.
 
 What is left:
 
-- **Approval rests on a hint.** The gateway refreshes each upstream's tools
-  every 30 seconds and takes the upstream's word for `readOnlyHint`. A server
-  that marks a write tool read-only gets past the approval gate, and, on first
-  discovery, opens that tool to members. That only affects the server's own
-  tools, and such a server already holds its own credential and can misuse it
-  without us. A fix would keep the hint at its first-seen value and flag
-  changes for an admin.
-- **Descriptions can change after review.** An upstream can change a
-  description after an admin has looked at it. The dashboard does not show the
-  change.
-- **No size limit on results.** A huge result could exhaust the gateway's
-  memory. The Pod's 384 MiB limit makes that a restart, not a hung node.
+- **Approval rests on a hint at first sight.** On first discovery the gateway
+  takes the upstream's word for `readOnlyHint`, so a server that marks a write
+  tool read-only from the start gets past the chat approval gate and opens
+  that tool to members. Pinning stops it changing the hint later. The admin
+  reviews the starting rules on the Permissions page.
+- **Results are not pinned.** A result can still carry instructions (the
+  Slack example above). The approval gate and roles are what limit that.
 
 ## What one team member can do to another
 
@@ -135,13 +142,30 @@ What is left:
   members. Each post shows the poster's name (`Bob (via urumi)`), and the audit
   log records who asked.
 - Use up the shared login rate limit on this VM (threat 1).
+- See that another member's provisioned store exists (name, address, owner)
+  on the Stores page, and use up the platform's total store limit (4).
 
 A member can't:
 
 - see another member's keys, audit rows or conversations;
 - approve another member's held calls;
 - call tools their role doesn't allow;
-- reach an upstream except through the gateway.
+- reach an upstream except through the gateway;
+- see or call the tools of another member's provisioned store, or delete it;
+- reach another store's database or WordPress from their store's MCP server
+  (NetworkPolicies; `scripts/verify-multistore.sh` checks it).
+
+## The store provisioner
+
+It is the only component with Kubernetes API access, so a bug or a
+compromise there matters most. Its permissions come in three layers
+([multi-store.md](multi-store.md)): cluster-wide it can only manage
+namespaces and bind one role; inside a store namespace it can do what Helm
+needs; and an admission policy refuses any write by it outside namespaces
+labelled as stores, including granting itself rights in `urumi-app` or
+labelling `urumi-app` as a store (both tried and refused on the VM). Only the
+gateway can reach it (NetworkPolicy plus a shared token). What is left: it can
+delete any store namespace, and it can read every store's Secret.
 
 ## Accountability
 
@@ -155,7 +179,8 @@ gateway audit row.
 
 1. Turn on k3s Secret encryption at rest, or move credentials to an external
    secret manager.
-2. Freeze `readOnlyHint` at first discovery, and show tool changes to admins.
+2. Notify admins when pinning holds a tool (today it shows on the
+   Permissions page only).
 3. Add an expiry to API keys.
 4. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
 5. Use a load balancer that keeps client addresses, so the login limit is per

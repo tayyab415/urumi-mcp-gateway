@@ -19,6 +19,8 @@ Everything runs on Kubernetes and installs with two Helm charts.
 | Dashboard and chat | https://app.34-67-189-86.sslip.io |
 | MCP endpoint | `https://app.34-67-189-86.sslip.io/mcp`, header `Authorization: Bearer <API key>`, or a browser sign-in (OAuth) |
 | The store | https://shop.34-67-189-86.sslip.io (checkout uses cash on delivery) |
+| More stores | Stores page in the dashboard; each new store is `http://<name>.34-67-189-86.sslip.io` |
+| Search mode (for clients that load every tool) | `https://app.34-67-189-86.sslip.io/mcp/search`: two tools, search and call |
 
 **Accounts.**
 
@@ -89,12 +91,30 @@ open connections to the MCP servers; NetworkPolicies enforce that.
 | Killing an upstream Pod leaves the others working | A fresh connection per call, a 10 s deadline, and readiness that ignores upstreams | Supplier killed mid-use: shipping still answered, and the dashboard showed it down, then ok |
 | Audit rows name the right person and outcome | One row per attempt, refused calls included | Five people in parallel, each attributed |
 
+## Bonus and stand-out items
+
+The brief's optional bonus and "other ways to stand out", what was done, and
+where to look.
+
+| Item | What we did | Where |
+|---|---|---|
+| **Bonus: multi-store provisioning** | Create and delete stores from the dashboard. Each gets its own namespace, database, volumes, Secret, Ingress host and WooCommerce MCP server, which the gateway registers by itself (`store-<name>__*`). NetworkPolicy isolation, ResourceQuota, LimitRange, 2 stores per person, a 15-minute deadline, restart-safe. Checked on the VM, including the brief's test (chat compares two stores, then one is deleted) | [docs/multi-store.md](docs/multi-store.md), `services/provisioner`, `scripts/verify-multistore.sh` |
+| 1. VPS deployment | The same charts on a GCP VM (k3s in k3d), public over HTTPS with cert-manager | [infra/gcp/README.md](infra/gcp/README.md), design note §11-12 |
+| 2. Tool permissions | Per-role, per-tool switches; hidden from lists and refused if called; provisioned stores' tools are visible to their owner and admins only | Permissions page, design note §5 |
+| 3. OAuth on the gateway | The gateway is its own OAuth authorization server per the MCP authorization spec: discovery, dynamic registration, PKCE, audience-bound opaque tokens, refresh rotation, consent page, "Connected apps" with disconnect | design note §13, `gateway/oauth.py` |
+| 4. Handling many tools | Search mode at `/mcp/search`: `gateway__search_tools` (BM25) and `gateway__call_tool`, same permissions and audit as direct calls | design note §14, `gateway/toolsearch.py` |
+| 6. Security hardening | Tool pinning against changed or injected tool descriptions; SSRF checks at save and connect time; default-deny NetworkPolicies; non-root Pods (Pod Security "restricted"); least-privilege RBAC plus an admission policy for the provisioner; upstream credentials encrypted at rest; Host check, POST-only `/mcp` | design note §15-16, [docs/threat-model.md](docs/threat-model.md) |
+| 7. Scaling (partial) | Rate limits per API key and per chat session at the Ingress. One gateway replica only (SQLite) | design note §11 |
+| 8. Observability (partial) | Calls, errors, p50/p95 per server and the slowest tools on the Overview page; clear reasons for unreachable upstreams and failed calls | Overview page, design note §7-8 |
+| 9. Upgrades and rollback | Content-hashed image tags, `helm upgrade`, a rollback done live, and what rollback cannot undo | design note §12 |
+
 ## Read more
 
 | Document | What it covers |
 |---|---|
 | [docs/design.md](docs/design.md) | How each mechanism works, how it fails, how it was checked, and the alternatives. It also covers Helm rollback and what it can't undo. |
 | [docs/threat-model.md](docs/threat-model.md) | Attackers, trust boundaries, what stops each threat, what is still open |
+| [docs/multi-store.md](docs/multi-store.md) | The multi-store bonus: provisioner, permissions, isolation, guardrails, recovery |
 | [charts/urumi-app/README.md](charts/urumi-app/README.md) | The app chart, NetworkPolicies, the Secret, public access, TLS and rate limits |
 | [charts/urumi-store/README.md](charts/urumi-store/README.md) | The store chart: WordPress, MariaDB, the setup Job and persistence |
 | [services/README.md](services/README.md) | Each service, its contracts, running it all locally |
@@ -110,6 +130,7 @@ open connections to the MCP servers; NetworkPolicies enforce that.
 | `services/woo-mcp` | The WooCommerce MCP server: five tools over the REST API |
 | `services/demo-mcps` | Shipping and supplier MCP servers, simulated and labelled as such |
 | `services/slack-mcp` | Slack MCP server for one channel |
+| `services/provisioner` | Creates and deletes stores with Helm, one namespace each |
 | `services/chat-agent` | Dashboard chat: OpenAI Agents SDK, Kimi K3 on Bedrock |
 | `dashboard` | React + TypeScript dashboard |
 | `charts/urumi-store`, `charts/urumi-app` | The two Helm charts |
@@ -143,8 +164,9 @@ Each service has its own: `cd services/<name> && uv run pytest -q`.
 
 | Service | Tests |
 |---|---|
-| gateway | 12 |
+| gateway | 45 (MCP, roles, OAuth, search mode, pinning, SSRF, stores) |
 | chat-agent | 26, plus one live test against Bedrock (`RUN_LIVE_BEDROCK=1`) |
 | slack-mcp | 14 |
 | woo-mcp | 10 |
 | demo-mcps | 3 |
+| provisioner | 15 |
