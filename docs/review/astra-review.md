@@ -1,6 +1,6 @@
 > **Status after the fixes (added by the project owner, 2026-10-26 12:55 UTC).**
-> All 11 findings are fixed. The fixes are commits `4bc5320`..`f2518c6`, merged in
-> `4f67311` and deployed as app Helm revision 20; R09 was fixed in `4e80dcd`.
+> All 11 findings are fixed. The fixes are commits `11846ef`..`8342a5b`, merged in
+> `7652b16` and deployed as app Helm revision 20; R09 was fixed in `e9a1062`.
 > How each was checked:
 >
 > | ID | Check |
