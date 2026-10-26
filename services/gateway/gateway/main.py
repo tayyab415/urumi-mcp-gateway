@@ -120,6 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await db.create_all()
+        if interrupted := await gateway.mark_interrupted():
+            log.warning("%d tool calls were still running when the gateway last stopped; audited as interrupted", interrupted)
         await bootstrap_admin(db, settings)
         await bootstrap_servers(db, gateway, settings)
         async with mcp_manager.run(), anyio.create_task_group() as tg:

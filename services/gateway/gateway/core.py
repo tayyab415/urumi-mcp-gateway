@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 import anyio
 import mcp_types as types
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from gateway import upstreams
@@ -40,6 +40,10 @@ SEPARATOR = "__"
 MAX_AUDIT_ARGS = 2000
 ROLES = ("admin", "member")
 IDENTITY_HEADER = "X-Urumi-User"
+# Audit outcomes for a call the upstream has been sent: "pending" while it runs,
+# "interrupted" if the gateway stopped before it ended (marked at the next start).
+PENDING = "pending"
+INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True)
@@ -293,8 +297,8 @@ class Gateway:
         try:
             result = await self._route(who, name, arguments, event, finish)
         finally:
-            if getattr(event, "outcome", None) is None:
-                # Cancelled (client went away) or crashed mid-call: record that too.
+            if getattr(event, "outcome", None) in (None, PENDING):
+                # Cancelled (client went away) or failed mid-call: record that too.
                 event.outcome, event.duration_ms = "aborted", int((time.monotonic() - started) * 1000)
             with anyio.CancelScope(shield=True):
                 await self._record(event)
@@ -325,6 +329,14 @@ class Gateway:
                 "after an admin last reviewed it. An admin can review and approve it on the Permissions page."), "definition not approved")
         if who.role not in tool.allowed_roles:
             return finish("denied", _error(f"Your role ({who.role}) is not allowed to use {name}. An admin can change this on the Permissions page."), "role not allowed")
+
+        # The row is written before the request goes out, and completed when it returns.
+        # If the gateway dies in between, the row stays "pending" and the next start marks
+        # it interrupted, so a write that happened never goes unrecorded. No row, no call.
+        if not await self._record_pending(event):
+            return finish("audit_failed", _error(
+                "The gateway could not record this call in its audit log, so it did not send it. Try again in a moment."),
+                "could not write the audit row before the call")
 
         read_only = bool((tool.annotations or {}).get("readOnlyHint"))
         try:
@@ -369,13 +381,45 @@ class Gateway:
                 server.last_error, server.last_checked_at = failure.message, now
                 await s.commit()
 
-    async def _record(self, event: AuditEvent) -> None:
+    async def _record_pending(self, event: AuditEvent) -> bool:
+        """Commit the call's row before the upstream sees the request. False if that failed."""
+        event.outcome = PENDING
         try:
             async with self.db.session() as s:
                 s.add(event)
                 await s.commit()
+        except Exception:
+            log.exception("could not write the audit row for %s; the call is refused", event.public_name)
+            event.outcome, event.id = None, None  # the final write tries a fresh row
+            return False
+        return True
+
+    async def _record(self, event: AuditEvent) -> None:
+        """Write how the call ended: a new row, or the end of the pending one."""
+        try:
+            async with self.db.session() as s:
+                if event.id is None:
+                    s.add(event)
+                else:
+                    await s.execute(update(AuditEvent).where(AuditEvent.id == event.id).values(
+                        outcome=event.outcome, error=event.error, duration_ms=event.duration_ms))
+                await s.commit()
         except Exception:  # an audit write failure must be loud, but must not hide the result
+            # A pending row stays as it is, and the next start marks it interrupted.
             log.exception("failed to write audit event for %s", event.public_name)
+
+    async def mark_interrupted(self) -> int:
+        """Rows still pending when the gateway starts: their call was cut off by a crash or restart.
+
+        The gateway runs as one replica, so no other process can have calls in
+        flight. Whether the upstream finished such a call is unknown.
+        """
+        async with self.db.session() as s:
+            result = await s.execute(update(AuditEvent).where(AuditEvent.outcome == PENDING).values(
+                outcome=INTERRUPTED,
+                error="The gateway stopped before this call finished. The upstream may have done it; check before retrying."))
+            await s.commit()
+        return result.rowcount or 0
 
 
 _ONE_PROBLEM = re.compile(

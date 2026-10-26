@@ -139,6 +139,10 @@ export function auditLabel(publicName: string, argumentsJson: string, outcome: s
   if (outcome === "auth_failed") return `${titleCase(w.server)} rejected the stored credential`;
   if (outcome === "tool_error") return `${w.verb} ${w.argument || w.noun} failed`;
   if (outcome === "aborted") return "Aborted before it finished";
+  if (outcome === "pending") return `${w.verb} ${w.argument || w.noun}…`;
+  if (outcome === "interrupted") return "Interrupted: the gateway restarted mid-call. Check before retrying";
+  if (outcome === "audit_failed") return "Refused: the gateway could not record it";
+  if (outcome === "invalid_arguments") return "Refused: invalid arguments";
   return `${w.verb} ${w.argument || w.noun}`;
 }
 
@@ -154,11 +158,19 @@ export function outcomeTone(outcome: string, error: string | null): { label: str
     case "disabled":
     case "unknown_tool":
     case "pending_review":
+    case "audit_failed":
+    case "invalid_arguments":
       return { label: "Refused", tone: "danger" };
     case "timeout":
       return error && error.includes("OUTCOME UNKNOWN") ? { label: "Outcome unknown", tone: "warning" } : { label: "Timed out", tone: "danger" };
     case "aborted":
       return { label: "Aborted", tone: "warning" };
+    // Written before the upstream call, finished when it returns.
+    case "pending":
+      return { label: "Running", tone: "neutral" };
+    // The gateway stopped mid-call; the upstream may or may not have done it.
+    case "interrupted":
+      return { label: "Outcome unknown", tone: "warning" };
     case "unreachable":
     case "auth_failed":
     case "protocol":
