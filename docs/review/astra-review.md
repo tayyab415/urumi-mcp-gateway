@@ -1,3 +1,23 @@
+> **Status after the fixes (added by the project owner, 2026-10-26 12:55 UTC).**
+> All 11 findings are fixed. The fixes are commits `4bc5320`..`f2518c6`, merged in
+> `4f67311` and deployed as app Helm revision 20; R09 was fixed in `4e80dcd`.
+> How each was checked:
+>
+> | ID | Check |
+> |---|---|
+> | R01 | Live server-side dry runs as the provisioner's ServiceAccount: weakening `store-north` to `privileged`, a new store namespace at `privileged`, and the hostPID/privileged/hostPath Deployment are all refused by the admission policy; a `baseline` store namespace and an ordinary Deployment are still allowed. Nothing was created. |
+> | R02 | `gateway_reproductions.py`: a tool added after registration is invisible to the member. `wire_reproductions.py` now stops at "held for review" for the late tool. Test `test_store_servers_get_no_free_pass_for_tools_added_later`. |
+> | R03 | `gateway_reproductions.py`: oversized structured content and images now carry the truncation marker. Tests in `test_result_cap.py`, including the upstream byte limit. |
+> | R04 | `audit_crash_reproduction.py`: after SIGKILL during a committed write there is now 1 audit row (was 0). Tests in `test_audit.py`. |
+> | R05 | Live: Bob's `gateway__search_tools` and `gateway__call_tool` calls appear in the audit log as `mcp-search`, inside the MCP filter. |
+> | R06 | Live, 150 requests at once straight to the VM with six whitespace spellings of one key: 24 refused by the gateway's own per-credential limiter (`-32011`). One unchanged header: 82 of 150 refused. |
+> | R07, R08 | Tests `test_retrying_after_a_failed_setup_job_runs_setup_again` and `test_a_delete_during_a_reconcile_pass_is_not_undone`. `provisioner_reproduction.py` now reaches the new `delete_failed_setup_job` step (it has no stub for it, so it stops there). |
+> | R09 | Live: the Storefront button opens `https://shop.34-67-189-86.sslip.io` from the Cloud Run address. |
+> | R10 | Approval card carries the full store name; chat-agent tests. |
+> | R11 | Live: an unknown tool and an admin-only tool both return JSON-RPC `-32602` "Unknown tool", and both are audited. |
+>
+> Test counts after the fixes: gateway 62, provisioner 18, chat-agent 29 (+1 live test skipped), woo-mcp 10, slack-mcp 14, demo-mcps 3; the dashboard builds.
+
 The core is working, but I would not sign off on the submission's security and reliability claims yet. I independently exercised real storefront checkout, approved chat writes, member chat, Claude Code, the Python MCP SDK, OAuth, tenant isolation and recovery on the live system. All 113 service tests passed, with one live-model test skipped, and the dashboard built. I found **11 confirmed findings: 7 Critical, 2 High and 2 Medium**, using the owner's severity definitions, where a false protection claim also counts as Critical. The main failures are a provisioner permission escape, tools added without review, ineffective result and rate limits, missing audit records, and failed provisioning retries. Cloud Run works for login, OAuth, MCP and streaming chat, but breaks the first-store link. Some failure reproductions use the actual application code with isolated fixtures; those are identified below and are not presented as attacks performed on the live stores.
 
 | ID | Severity | Status | Finding | Evidence scope |
