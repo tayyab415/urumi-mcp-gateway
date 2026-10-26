@@ -237,17 +237,22 @@ def observe(namespace: str, release: str) -> state.Observed:
 @dataclass
 class HelmResult:
     ok: bool
-    output: str
+    stdout: str
+    stderr: str = ""
+
+    @property
+    def output(self) -> str:
+        """The end of what Helm printed, for a person to read. Not for parsing."""
+        return (self.stdout + "\n" + self.stderr).strip()[-2000:]
 
 
 async def _helm(*args: str, timeout: float = 180) -> HelmResult:
     env = {**os.environ}
     with anyio.move_on_after(timeout) as scope:
         proc = await anyio.run_process(["helm", *args], check=False, env=env)
-        out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-        return HelmResult(proc.returncode == 0, out[-2000:])
+        return HelmResult(proc.returncode == 0, proc.stdout.decode(errors="replace"), proc.stderr.decode(errors="replace"))
     assert scope.cancelled_caught
-    return HelmResult(False, f"helm {args[0]} took longer than {timeout:g}s")
+    return HelmResult(False, "", f"helm {args[0]} took longer than {timeout:g}s")
 
 
 async def helm_status(namespace: str, release: str) -> dict[str, Any] | None:
@@ -257,7 +262,7 @@ async def helm_status(namespace: str, release: str) -> dict[str, Any] | None:
         if "not found" in result.output.lower():
             return None
         raise RuntimeError(result.output)
-    return json.loads(result.output)
+    return json.loads(result.stdout)  # the whole stdout: a release's JSON runs to many kilobytes
 
 
 def store_values(slug: str, display_name: str, settings: Settings) -> dict[str, Any]:
@@ -295,5 +300,5 @@ async def helm_install(slug: str, display_name: str, settings: Settings) -> Helm
 async def helm_uninstall(namespace: str, release: str) -> HelmResult:
     result = await _helm("uninstall", release, "-n", namespace, "--wait", "--timeout", "2m", timeout=150)
     if not result.ok and "not found" in result.output.lower():
-        return HelmResult(True, result.output)
+        return HelmResult(True, result.stdout, result.stderr)
     return result

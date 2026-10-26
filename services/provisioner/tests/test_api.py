@@ -71,3 +71,35 @@ def test_delete_marks_deleting(client):
     c.put("/stores/north", json={"name": "North", "owner_id": 7, "owner_email": "a@b"}, headers=TOKEN)
     assert c.delete("/stores/north", headers=TOKEN).json()["phase"] == "Deleting"
     assert c.delete("/stores/nope", headers=TOKEN).status_code == 404
+
+
+def test_helm_status_parses_long_output(monkeypatch):
+    """A release's JSON is many kilobytes; status must parse all of it (a restart bug, fixed)."""
+    import asyncio
+    import json as _json
+
+    big = _json.dumps({"info": {"status": "deployed"}, "manifest": "x" * 10_000})
+
+    async def fake_helm(*args, timeout=180):
+        return cluster.HelmResult(True, big, "")
+
+    monkeypatch.setattr(cluster, "_helm", fake_helm)
+    assert asyncio.run(cluster.helm_status("store-north", "north"))["info"]["status"] == "deployed"
+
+
+def test_deadline_fails_a_store_whose_steps_keep_erroring(client, monkeypatch):
+    import asyncio
+
+    c, spaces = client
+    c.put("/stores/north", json={"name": "North", "owner_id": 7, "owner_email": "a@b"}, headers=TOKEN)
+    ns = spaces["store-north"]
+    ns.metadata.annotations["urumi.io/deadline"] = "2000-01-01T00:00:00Z"
+    prov = c.app.state.provisioner
+
+    async def boom(*a, **k):
+        raise RuntimeError("helm is broken")
+
+    monkeypatch.setattr(prov, "reconcile", boom)
+    asyncio.run(prov._reconcile_guarded(ns, "north"))
+    assert ns.metadata.annotations["urumi.io/phase"] == "Failed"
+    assert "helm is broken" in ns.metadata.annotations["urumi.io/reason"]

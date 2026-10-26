@@ -117,7 +117,16 @@ class Provisioner:
             await self.reconcile(ns, slug)
         except Exception as exc:  # noqa: BLE001 - one store's trouble must not stop the others
             log.exception("reconcile %s failed", slug)
-            await self._annotate(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {cluster.short_error(exc)}"})
+            ann = ns.metadata.annotations or {}
+            deadline = state.parse_iso(ann.get(state.ANN_DEADLINE))
+            if ann.get(state.ANN_PHASE) == "Provisioning" and deadline is not None and state.now_utc() >= deadline:
+                # The deadline holds even when a step keeps failing: fail cleanly, with the reason.
+                await self._annotate(ns.metadata.name, {
+                    state.ANN_PHASE: "Failed",
+                    state.ANN_REASON: f"Not ready before the provisioning deadline. Last error: {cluster.short_error(exc)}",
+                })
+            else:
+                await self._annotate(ns.metadata.name, {state.ANN_REASON: f"Provisioner error, retrying: {cluster.short_error(exc)}"})
         finally:
             self.busy.discard(slug)
 
