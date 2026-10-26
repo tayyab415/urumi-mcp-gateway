@@ -71,6 +71,19 @@ Refusals come back as tool results with `isError: true` and a plain sentence, no
 
 ## WooCommerce connection
 
+**Why the REST API, not WP-CLI or the database.** The brief allows any of the
+three. The REST API is WooCommerce's supported interface: requests go through
+WooCommerce's own validation, hooks and stock handling, so a product or order
+status changed through it behaves exactly like one changed in WooCommerce
+admin. It has its own scoped credential, a Read/Write REST key that can be
+revoked without touching the admin password. And it works over the network
+from a separate Pod, so woo-mcp needs no access to WordPress's files.
+WP-CLI would need a shell inside the WordPress Pod, which means giving the MCP
+server `kubectl exec` rights or WordPress's files: far more power than five
+tools need. Writing to MariaDB directly would skip WooCommerce's logic and tie
+us to its table layout (orders live in the HPOS tables). The cost of the REST
+API is one HTTP hop and the OAuth 1.0a signing detail below.
+
 `woo-mcp` sends requests to `WOO_API_URL` (the WordPress Service inside the cluster) and signs them for `WOO_STORE_URL` (WordPress's configured home URL). WooCommerce rebuilds the signed URL from its home URL's host and port, which must match exactly, and from the scheme the request actually arrived on. Inside the cluster that is plain HTTP, even when the public store is HTTPS. So for `https://shop.example.com` the chart sets `WOO_STORE_URL=http://shop.example.com` and `WOO_AUTH=oauth1`. WooCommerce accepts Basic auth (`WOO_AUTH=basic`) only on requests that arrive over HTTPS.
 
 | Variable | Example |
