@@ -192,6 +192,7 @@ Everything that differs is a value. `values-prod.yaml` is an example:
 | `ingress.annotations` | none | `cert-manager.io/cluster-issuer: letsencrypt` | the same, or your own certificate |
 | `ingress.tls` | off | on, Secret `urumi-app-tls` | on |
 | `gateway.cookieSecure` | false | true | true |
+| `gateway.demoLogin` | false | true (public demo: click a person to sign in) | false |
 | `store.publicUrl` | `http://shop.urumi.test:18080` | `https://shop.34-67-189-86.sslip.io` | the store's real URL |
 | `gateway.storage.storageClassName` | `local-path` | `local-path` | the cluster's StorageClass |
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ArrowUpRight, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { ConfirmMorph } from "@/arc/confirm-morph";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -38,7 +38,11 @@ export function StoresPage() {
   const stores = useResource(() => api.stores.list().then((r) => r.stores), [], { interval: 3000 });
   const list = stores.data ?? [];
   const mine = list.filter((s) => s.mine && s.phase !== "Deleting").length;
-  const firstStore = useMemo(() => window.location.host.replace(/^app\./, "shop."), []);
+  // From the gateway's settings: the dashboard's own address may be a proxy's (infra/cloud-run),
+  // so it says nothing about where the stores live. The guess is only for an older gateway.
+  const firstStoreUrl = me?.store_url ?? `${window.location.protocol}//${window.location.host.replace(/^app\./, "shop.")}`;
+  const firstStore = firstStoreUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const storeDomain = me?.store_domain ?? window.location.host.replace(/^app\./, "");
 
   async function create(retrySlug?: string, retryName?: string) {
     setBusy(true);
@@ -77,7 +81,7 @@ export function StoresPage() {
             <span>Installed with Helm, not managed here</span>
           </div>
           <div className={styles.bar}>
-            <Button icon={<ArrowUpRight />} onClick={() => window.open(`${window.location.protocol}//${firstStore}/`, "_blank")}>Storefront</Button>
+            <Button icon={<ArrowUpRight />} onClick={() => window.open(`${firstStoreUrl.replace(/\/$/, "")}/`, "_blank")}>Storefront</Button>
           </div>
         </Card>
         {list.map((s) => (
@@ -120,7 +124,7 @@ export function StoresPage() {
         footer={<><Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" disabled={!name.trim() || slug.length < 2 || busy} onClick={() => void create()}>{busy ? "Creating" : "Create store"}</Button></>}>
         <Field label="Store name">{(id) => <Input id={id} value={name} maxLength={40} autoFocus placeholder="North Sports"
           onChange={(e) => { setName(e.target.value); if (!slugEdited) setSlug(toSlug(e.target.value)); }} />}</Field>
-        <Field label="Short name" hint={`Its address and tool prefix: ${slug || "north"}.${window.location.host.replace(/^app\./, "")} and store-${slug || "north"}__list_orders.`}>
+        <Field label="Short name" hint={`Its address and tool prefix: ${slug || "north"}.${storeDomain} and store-${slug || "north"}__list_orders.`}>
           {(id) => <Input id={id} value={slug} maxLength={20} placeholder="north" onChange={(e) => { setSlugEdited(true); setSlug(e.target.value.toLowerCase()); }}
             onKeyDown={(e) => e.key === "Enter" && name.trim() && slug.length >= 2 && void create()} />}
         </Field>

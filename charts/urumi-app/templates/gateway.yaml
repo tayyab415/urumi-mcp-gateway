@@ -112,6 +112,15 @@ spec:
               value: {{ printf "%s:8080,%s,%s" $name $name .Values.host | quote }}
             - name: COOKIE_SECURE
               value: {{ .Values.gateway.cookieSecure | quote }}
+            - name: DEMO_LOGIN
+              value: {{ .Values.gateway.demoLogin | quote }}
+            # For the Stores page: the dashboard's own address may be a proxy's.
+            - name: STORE_PUBLIC_URL
+              value: {{ .Values.store.publicUrl | quote }}
+            {{- if .Values.provisioner.enabled }}
+            - name: STORE_DOMAIN
+              value: {{ .Values.provisioner.storeDomain | quote }}
+            {{- end }}
             - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS
               value: {{ .Values.gateway.upstreamTimeoutSeconds | quote }}
           # /readyz checks the gateway's own database only. A dead upstream makes

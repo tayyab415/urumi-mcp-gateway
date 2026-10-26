@@ -16,5 +16,7 @@ gateway:
   adminEmail: admin@example.com
   # The login cookie is only sent over HTTPS.
   cookieSecure: true
+  # Never on in production: it signs anyone in as anyone with one click.
+  demoLogin: false
   storage:
     storageClassName: ""

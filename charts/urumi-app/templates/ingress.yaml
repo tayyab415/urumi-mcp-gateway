@@ -24,7 +24,8 @@
     (dict "path" "/.well-known/oauth-protected-resource" "service" "gateway")
     (dict "path" "/" "service" "dashboard")))
   (dict "name" "login" "limit" "login" "paths" (list
-    (dict "path" "/api/auth/login" "type" "Exact" "service" "gateway")))
+    (dict "path" "/api/auth/login" "type" "Exact" "service" "gateway")
+    (dict "path" "/api/auth/demo-login" "type" "Exact" "service" "gateway")))
   (dict "name" "oauth" "limit" "login" "paths" (list
     (dict "path" "/authorize" "service" "gateway")
     (dict "path" "/token" "service" "gateway")

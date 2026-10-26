@@ -5,6 +5,8 @@ interface Auth {
   me: Me | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** The public demo: sign in as a person picked from the list. */
+  loginAs: (userId: number) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -14,7 +16,7 @@ interface Auth {
 const DEMO_LOGIN = (import.meta.env.VITE_DEMO_LOGIN as string | undefined)?.split(/:(.*)/s);
 const SIGNED_OUT = "urumi.signedOut";
 
-const Ctx = createContext<Auth>({ me: null, loading: true, login: async () => {}, logout: async () => {}, refresh: async () => {} });
+const Ctx = createContext<Auth>({ me: null, loading: true, login: async () => {}, loginAs: async () => {}, logout: async () => {}, refresh: async () => {} });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
@@ -61,12 +63,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [refresh]);
 
+  const loginAs = useCallback(async (userId: number) => {
+    await api.auth.demoLogin(userId);
+    sessionStorage.removeItem(SIGNED_OUT);
+    await refresh();
+  }, [refresh]);
+
   const logout = useCallback(async () => {
     sessionStorage.setItem(SIGNED_OUT, "1");
     try { await api.auth.logout(); } finally { setMe(null); }
   }, []);
 
-  const value = useMemo(() => ({ me, loading, login, logout, refresh }), [me, loading, login, logout, refresh]);
+  const value = useMemo(() => ({ me, loading, login, loginAs, logout, refresh }), [me, loading, login, loginAs, logout, refresh]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

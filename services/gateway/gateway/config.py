@@ -47,6 +47,15 @@ class Settings:
     # PUBLIC_URL plus loopback; MCP_ALLOWED_HOSTS adds more, e.g. the in-cluster
     # Service name the chat service uses. "*" turns the check off.
     extra_allowed_hosts: tuple[str, ...] = ()
+    # A public demo: the sign-in page lists the people and signs in as one with
+    # a click, no password. Anyone who can open the dashboard can then act as
+    # anyone, admins included, so it stays off unless a deployment asks for it.
+    demo_login: bool = False
+    # Shown on the Stores page: the first store's address, and the domain new
+    # stores get a name under. The dashboard cannot guess them from its own
+    # address, which may be a proxy's (infra/cloud-run).
+    store_public_url: str | None = None
+    store_domain: str | None = None
 
     def mcp_allowed_hosts(self) -> list[str]:
         if "*" in self.extra_allowed_hosts:
@@ -78,4 +87,7 @@ class Settings:
             provisioner_token=os.environ.get("PROVISIONER_TOKEN") or None,
             store_sync_interval_seconds=float(os.environ.get("STORE_SYNC_INTERVAL_SECONDS", "5")),
             extra_allowed_hosts=tuple(h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()),
+            demo_login=_bool("DEMO_LOGIN", False),
+            store_public_url=os.environ.get("STORE_PUBLIC_URL") or None,
+            store_domain=os.environ.get("STORE_DOMAIN") or None,
         )

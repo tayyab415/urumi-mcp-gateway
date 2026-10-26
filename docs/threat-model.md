@@ -201,6 +201,19 @@ labelling `urumi-app` as a store (both tried and refused on the VM). Only the
 gateway can reach it (NetworkPolicy plus a shared token). What is left: it can
 delete any store namespace, and it can read every store's Secret.
 
+## The public demo's sign-in list
+
+On the demo VM the sign-in page lists every active person, and one click signs
+in as them, with no password, so reviewers can try each role straight away. It
+is a setting, `gateway.demoLogin`, off by default and off in
+`values-prod.yaml`. Signing in this way needs the `X-Urumi-CSRF` header, so
+another site cannot sign a visitor in as someone. Deactivated people are not
+listed, and the audit log still names the person each call ran as.
+
+What is left: on the demo, anyone who finds the address can act as the admin.
+They could disable servers, revoke keys, post to Slack, and create or delete
+stores. It is open item 1.
+
 ## Accountability
 
 Each audit row names the person, and the key prefix or chat conversation. No API
@@ -211,9 +224,11 @@ gateway audit row.
 
 ## Open items, in priority order
 
-1. Turn on k3s Secret encryption at rest, or move credentials to an external
+1. Turn off the demo sign-in list (`gateway.demoLogin: false`) once the review
+   is over (see "The public demo's sign-in list").
+2. Turn on k3s Secret encryption at rest, or move credentials to an external
    secret manager.
-2. Put the first store (namespace `urumi-store`) behind the same default-deny
+3. Put the first store (namespace `urumi-store`) behind the same default-deny
    NetworkPolicies, ResourceQuota and LimitRange that provisioned stores get.
    The store chart already has them (`networkPolicy.enabled`,
    `guardrails.enabled`); turning them on for the first store also needs a rule
@@ -221,12 +236,12 @@ gateway audit row.
    provisioned stores are kept out by their own egress policies, but a Pod in a
    namespace without one (for example `cert-manager`) could still connect to
    the first store's database.
-3. Notify admins when pinning holds a tool (today it shows on the
+4. Notify admins when pinning holds a tool (today it shows on the
    Permissions page only).
-4. Add an expiry to API keys.
-5. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
-6. Use a load balancer that keeps client addresses, so the login limit is per
+5. Add an expiry to API keys.
+6. Add HSTS, and rate limits on `wp-login.php` and `xmlrpc.php`.
+7. Use a load balancer that keeps client addresses, so the login limit is per
    client.
-7. Try browser sign-in with a real Cursor (Claude Code was tried and works),
+8. Try browser sign-in with a real Cursor (Claude Code was tried and works),
    then decide whether a short grace period for refresh tokens is worth its
    cost.

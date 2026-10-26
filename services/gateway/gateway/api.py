@@ -114,6 +114,10 @@ class LoginIn(BaseModel):
     password: str
 
 
+class DemoLoginIn(BaseModel):
+    user_id: int
+
+
 class InviteIn(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     role: Role = "member"
@@ -309,6 +313,33 @@ def build_router(settings: Settings) -> APIRouter:
         await start_session(db, user, response)
         return user_out(user)
 
+    # A public demo (DEMO_LOGIN) signs in with a click instead of a password.
+    # Switched off, both routes answer 404, as if they did not exist.
+    def demo_only() -> None:
+        if not settings.demo_login:
+            raise HTTPException(404, "Not Found")
+
+    @r.get("/auth/demo-users")
+    async def demo_users(request: Request) -> list[UserOut]:
+        demo_only()
+        async with request.app.state.db.session() as s:
+            rows = await s.scalars(select(User).where(User.active.is_(True)).order_by(User.role, User.name))
+            return [user_out(u) for u in rows]
+
+    @r.post("/auth/demo-login")
+    async def demo_login(body: DemoLoginIn, request: Request, response: Response) -> UserOut:
+        demo_only()
+        # The CSRF header, so another site cannot sign a visitor in as someone else.
+        if request.headers.get("x-urumi-csrf") != "1":
+            raise HTTPException(403, "Missing CSRF header")
+        db: Database = request.app.state.db
+        async with db.session() as s:
+            user = await s.get(User, body.user_id)
+        if user is None or not user.active:
+            raise HTTPException(404, "No such person")
+        await start_session(db, user, response)
+        return user_out(user)
+
     @r.post("/auth/logout")
     async def logout(request: Request, response: Response) -> dict[str, bool]:
         token = request.cookies.get(COOKIE)
@@ -334,7 +365,8 @@ def build_router(settings: Settings) -> APIRouter:
     @r.get("/auth/me")
     async def me(user: CurrentUser, request: Request) -> dict[str, Any]:
         return {**user_out(user).model_dump(), "mcp_url": f"{settings.public_url}/mcp",
-                "oauth_enabled": request.app.state.oauth is not None}
+                "oauth_enabled": request.app.state.oauth is not None,
+                "store_url": settings.store_public_url, "store_domain": settings.store_domain}
 
     # -- invitations ----------------------------------------------------------
 

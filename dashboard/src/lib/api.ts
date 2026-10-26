@@ -64,6 +64,9 @@ export interface Me extends User {
   mcp_url: string;
   /** False when the gateway's public URL is plain http, so browser sign-in for MCP clients is off. */
   oauth_enabled?: boolean;
+  /** The first store's address and the domain new stores get, from the gateway's settings. */
+  store_url?: string | null;
+  store_domain?: string | null;
 }
 
 export type ServerHealth = "ok" | "down" | "auth_failed" | "unknown" | string;
@@ -248,6 +251,9 @@ export const api = {
   auth: {
     me: () => http.get<Me>("/api/auth/me"),
     login: (email: string, password: string) => http.post<User>("/api/auth/login", { email, password }),
+    /** The public demo's sign-in list. 404 when the deployment has it off. */
+    demoUsers: () => http.get<User[]>("/api/auth/demo-users"),
+    demoLogin: (user_id: number) => http.post<User>("/api/auth/demo-login", { user_id }),
     logout: () => http.post<{ ok: boolean }>("/api/auth/logout"),
     chatToken: () => http.post<{ token: string; chat_url: string }>("/api/auth/chat-token"),
   },

@@ -1,7 +1,26 @@
 .page { min-height: 100%; display: grid; place-items: center; padding: 24px; }
-.wrap { width: min(380px, 100%); display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.wrap { width: min(420px, 100%); display: flex; flex-direction: column; align-items: center; gap: 20px; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 28px; font-weight: 500; letter-spacing: -0.02em; }
 .tag { color: var(--text-muted); margin-top: -12px; }
 .card { width: 100%; display: flex; flex-direction: column; gap: 16px; padding: 24px; }
-.foot { color: var(--text-muted); font-size: var(--text-sm); }
+.foot { color: var(--text-muted); font-size: var(--text-sm); text-align: center; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); text-align: center; }
+
+.people { width: 100%; display: flex; flex-direction: column; padding: 8px; }
+.heading { color: var(--text-muted); font-size: var(--text-xs); padding: 8px 12px 6px; }
+.person {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.person:hover:not(:disabled), .person:focus-visible { background: var(--surface); outline: none; }
+.person:disabled { cursor: progress; opacity: 0.6; }
+.who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.name { color: var(--foreground); }
+.email { color: var(--text-muted); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role, .admin { font-size: var(--text-xs); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+.admin { color: var(--foreground); }
+.go { color: var(--text-muted); flex: none; }
+.person:hover .go { color: var(--foreground); }
+.error { color: var(--danger); font-size: var(--text-sm); padding: 8px 12px 4px; }
+.link { border: 0; background: none; padding: 0; color: var(--text-secondary); font: inherit; font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.link:hover { color: var(--foreground); }

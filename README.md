@@ -27,7 +27,10 @@ The `run.app` address is a Cloud Run service that only forwards requests
 Kubernetes cluster on the VM, which also answers directly at
 https://app.34-67-189-86.sslip.io.
 
-**Accounts.**
+**Accounts.** On the live demo the sign-in page lists everyone: click a
+person to sign in as them, no password (`gateway.demoLogin`, off by default;
+the risk is in [the threat model](docs/threat-model.md#the-public-demos-sign-in-list)). "Use a password"
+gives the normal form.
 
 - The admin is `admin@urumi.test`. Its password is the `admin-password` key in
   `.runtime/app/secrets.json` on the coding workspace.

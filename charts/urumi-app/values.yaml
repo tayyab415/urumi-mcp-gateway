@@ -58,6 +58,10 @@ gateway:
   # Only true over HTTPS; a Secure cookie is never sent over plain HTTP.
   cookieSecure: false
   upstreamTimeoutSeconds: 10
+  # A public demo: the sign-in page lists the people and signs in as one with a
+  # click, no password. Anyone who can open the dashboard can then act as any
+  # person, admins included. Only for a demo deployment.
+  demoLogin: false
   # The servers a fresh install starts with. Applied once, when the gateway's
   # database has no servers; after that admins manage them in the dashboard.
   bootstrapServers: [woo, shipping, supplier]
