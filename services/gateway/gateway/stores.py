@@ -94,6 +94,9 @@ async def sync_registrations(db: Database, gateway: Gateway, provisioner: Provis
                 await s.delete(server)
         for slug, store in ready.items():
             if slug in managed:
+                # Keep the owner in step (servers registered before owners were recorded).
+                if managed[slug].owner_id != store["owner_id"]:
+                    managed[slug].owner_id = store["owner_id"]
                 continue
             if await s.scalar(select(Server).where(Server.slug == slug)):
                 log.warning("store server %s: slug taken by a server an admin added; not registering", slug)

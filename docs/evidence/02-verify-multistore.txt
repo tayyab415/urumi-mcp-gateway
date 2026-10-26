@@ -1,0 +1,23 @@
+== 1. Network isolation: connections from store 'north' MCP server (NetworkPolicy)
+PASS  north woo-mcp -> own WordPress: open
+PASS  north woo-mcp -> own database: blocked
+PASS  north woo-mcp -> other store's WordPress: blocked
+PASS  north woo-mcp -> other store's database: blocked
+PASS  north woo-mcp -> first store's WordPress: blocked
+PASS  north woo-mcp -> gateway: blocked
+PASS  north woo-mcp -> cloud metadata: blocked
+== 2. Only the gateway may call a store's MCP server
+PASS  chat Pod -> store north woo-mcp: blocked
+PASS  gateway Pod -> store north woo-mcp: open
+== 3. The provisioner's permissions (RBAC + admission policy)
+PASS  provisioner may read Secrets in store-north
+PASS  provisioner may NOT read Secrets in urumi-app
+PASS  provisioner may NOT touch kube-system
+PASS  provisioner granting itself the tenant role in urumi-app: denied by the admission policy
+PASS  provisioner labelling urumi-app as a store: denied
+== 4. Guardrails in store-north
+PASS  ResourceQuota present
+PASS  LimitRange present
+PASS  default-deny NetworkPolicy present
+
+17 passed, 0 failed
