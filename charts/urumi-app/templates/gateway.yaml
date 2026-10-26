@@ -114,6 +114,13 @@ spec:
               value: {{ .Values.gateway.cookieSecure | quote }}
             - name: DEFAULT_UPSTREAM_TIMEOUT_SECONDS
               value: {{ .Values.gateway.upstreamTimeoutSeconds | quote }}
+            # Per-credential limit on /mcp, checked after authentication.
+            - name: MCP_RATE_LIMIT_AVERAGE
+              value: {{ .Values.gateway.rateLimit.average | quote }}
+            - name: MCP_RATE_LIMIT_PERIOD
+              value: {{ .Values.gateway.rateLimit.period | quote }}
+            - name: MCP_RATE_LIMIT_BURST
+              value: {{ .Values.gateway.rateLimit.burst | quote }}
           # /readyz checks the gateway's own database only. A dead upstream makes
           # its own tools fail; it must not take the gateway out of the Service.
           startupProbe:

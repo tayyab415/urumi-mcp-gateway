@@ -47,6 +47,12 @@ class Settings:
     # PUBLIC_URL plus loopback; MCP_ALLOWED_HOSTS adds more, e.g. the in-cluster
     # Service name the chat service uses. "*" turns the check off.
     extra_allowed_hosts: tuple[str, ...] = ()
+    # The per-credential limit on /mcp (ratelimit.py): up to `burst` requests at once,
+    # then `average` per `period` ("1s", "1m"). The chart sets the Ingress's numbers.
+    # An average of 0 turns it off.
+    mcp_rate_average: float = 10
+    mcp_rate_period: str = "1s"
+    mcp_rate_burst: int = 50
 
     def mcp_allowed_hosts(self) -> list[str]:
         if "*" in self.extra_allowed_hosts:
@@ -78,4 +84,7 @@ class Settings:
             provisioner_token=os.environ.get("PROVISIONER_TOKEN") or None,
             store_sync_interval_seconds=float(os.environ.get("STORE_SYNC_INTERVAL_SECONDS", "5")),
             extra_allowed_hosts=tuple(h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()),
+            mcp_rate_average=float(os.environ.get("MCP_RATE_LIMIT_AVERAGE", "10")),
+            mcp_rate_period=os.environ.get("MCP_RATE_LIMIT_PERIOD", "1s"),
+            mcp_rate_burst=int(os.environ.get("MCP_RATE_LIMIT_BURST", "50")),
         )
