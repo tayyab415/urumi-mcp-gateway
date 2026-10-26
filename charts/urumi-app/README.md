@@ -114,8 +114,16 @@ gateway, chat or dashboard (WordPress, for the shop hostname)
 | Path | Limit | Counted per |
 |---|---|---|
 | `/api/auth/login`, `/authorize`, `/token`, `/register`, `/revoke`, `/oauth` | 10 at once, then 20 a minute | client address (one shared count) |
-| `/mcp` | 50 at once, then 10 a second | `Authorization` header: each API key |
+| `/mcp` | 50 at once, then 10 a second | `Authorization` header: each API key, as Traefik sees the text |
 | `/api/chat` | 20 at once, then 30 a minute | `Authorization` header: each chat session |
+
+Traefik counts the header as text, so the same key written with extra spaces
+after `Bearer` would get a fresh allowance per spelling. The gateway therefore
+applies the `/mcp` limit again itself, after it has checked the credential:
+one allowance per API key, OAuth token or chat session, however the header is
+written, answered with 429 and `Retry-After` past the limit
+(`gateway.rateLimit`, same numbers; `average: 0` turns it off). Its counts
+live in memory, which fits the gateway's one replica.
 
 k3d's load balancer hides the caller's address: every request reaches Traefik
 from `10.42.0.1`. So on this VM the login limit is one limit for everybody.

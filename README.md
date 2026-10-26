@@ -108,8 +108,8 @@ where to look.
 | 2. Tool permissions | Per-role, per-tool switches; hidden from lists and refused if called; provisioned stores' tools are visible to their owner and admins only | Permissions page, design note §5 |
 | 3. OAuth on the gateway | The gateway is its own OAuth authorization server per the MCP authorization spec: discovery, dynamic registration, PKCE, audience-bound opaque tokens, refresh rotation, consent page, "Connected apps" with disconnect | design note §13, `gateway/oauth.py` |
 | 4. Handling many tools | Search mode at `/mcp/search`: `gateway__search_tools` (BM25) and `gateway__call_tool`, same permissions and audit as direct calls | design note §14, `gateway/toolsearch.py` |
-| 6. Security hardening | Tool pinning against changed or injected tool descriptions; SSRF checks at save and connect time; default-deny NetworkPolicies; non-root Pods (Pod Security "restricted"); least-privilege RBAC plus an admission policy for the provisioner; upstream credentials encrypted at rest; Host check, POST-only `/mcp` | design note §15-16, [docs/threat-model.md](docs/threat-model.md) |
-| 7. Scaling (partial) | Rate limits per API key and per chat session at the Ingress. One gateway replica only (SQLite) | design note §11 |
+| 6. Security hardening | Tool pinning against changed or injected tool descriptions; SSRF checks at save and connect time; default-deny NetworkPolicies; non-root Pods (Pod Security "restricted"); least-privilege RBAC plus an admission policy for the provisioner, which also keeps store namespaces at Pod Security "baseline" or stricter; upstream credentials encrypted at rest; Host check, POST-only `/mcp` | design note §15-16, [docs/threat-model.md](docs/threat-model.md) |
+| 7. Scaling (partial) | Rate limits per API key and per chat session: at the Ingress, and again inside the gateway per verified credential, so rewriting the header does not reset them. One gateway replica only (SQLite) | design note §11 |
 | 8. Observability (partial) | Calls, errors, p50/p95 per server and the slowest tools on the Overview page; clear reasons for unreachable upstreams and failed calls | Overview page, design note §7-8 |
 | 9. Upgrades and rollback | Content-hashed image tags, `helm upgrade`, a rollback done live, and what rollback cannot undo | design note §12 |
 
@@ -188,9 +188,9 @@ Each service has its own: `cd services/<name> && uv run pytest -q`.
 
 | Service | Tests |
 |---|---|
-| gateway | 45 (MCP, roles, OAuth, search mode, pinning, SSRF, stores) |
-| chat-agent | 26, plus one live test against Bedrock (`RUN_LIVE_BEDROCK=1`) |
+| gateway | 60 (MCP, roles, OAuth, search mode, pinning, result cap, audit across a crash, rate limit, SSRF, stores) |
+| chat-agent | 29, plus one live test against Bedrock (`RUN_LIVE_BEDROCK=1`) |
 | slack-mcp | 14 |
 | woo-mcp | 10 |
 | demo-mcps | 3 |
-| provisioner | 15 |
+| provisioner | 18 |
