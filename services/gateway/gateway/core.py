@@ -41,6 +41,7 @@ SEPARATOR = "__"
 MAX_AUDIT_ARGS = 2000
 ROLES = ("admin", "member")
 IDENTITY_HEADER = "X-Urumi-User"
+SERVER_META = "urumi.io/server"  # key in each listed tool's _meta: {"slug": ..., "name": ...}
 # Audit outcomes for a call the upstream has been sent: "pending" while it runs,
 # "interrupted" if the gateway stopped before it ended (marked at the next start).
 PENDING = "pending"
@@ -287,6 +288,9 @@ class Gateway:
                     input_schema=tool.input_schema,
                     output_schema=tool.output_schema,
                     annotations=annotations,
+                    # Which server, as data: a server name can itself contain ": " ("Store: North"),
+                    # so a client should not have to cut it out of the title.
+                    meta={SERVER_META: {"slug": server.slug, "name": server.name}},
                 )
             )
         return result

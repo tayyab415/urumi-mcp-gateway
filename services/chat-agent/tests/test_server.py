@@ -118,7 +118,7 @@ async def test_approve_releases_the_held_call(writing_api, gateway):
     asked = events[3]
     assert asked["request_id"] == pending.request_id and asked["call_id"] == "c1"
     assert asked["name"] == "woo__create_product" and asked["server"] == "woo" and asked["read_only"] is False
-    assert asked["summary"] == "Run woo__create_product on WooCommerce"
+    assert asked["summary"] == "Run woo__create_product on WooCommerce" and asked["server_name"] == "WooCommerce"
     assert asked["input"] == {"name": "Training Ball", "regular_price": "25.00"}
     assert events[4] == {"type": "approval_decided", "request_id": pending.request_id, "decision": "approve"}
     assert not events[5]["is_error"] and "denied" not in events[5]

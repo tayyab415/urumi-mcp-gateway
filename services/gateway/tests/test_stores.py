@@ -95,6 +95,10 @@ async def test_store_lifecycle_registers_and_removes_tools(tmp_path):
                                 await anyio.sleep(0.2)
                         result = await client.call_tool("store-north__list_products", {})
                         assert not result.is_error
+                        # The store's name travels as data, whole: "Store: North" has a colon of its own.
+                        listed = next(t for t in (await client.list_tools()).tools if t.name == "store-north__list_products")
+                        assert listed.meta["urumi.io/server"] == {"slug": "store-north", "name": "Store: North"}
+                        assert listed.title.startswith("Store: North: ")
 
                         # Only the owner (and admins) see a store's tools; Bob cannot call them either.
                         bob_key = (await bob.post("/api/keys", json={"name": "cli"})).json()["key"]

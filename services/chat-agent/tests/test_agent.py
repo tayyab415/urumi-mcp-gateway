@@ -235,6 +235,31 @@ async def test_write_tool_waits_for_approval_before_the_gateway_sees_it(gateway)
     assert gateway.fake.audit[0]["tool"] == "woo__create_product" and gateway.fake.audit[0]["outcome"] == "ok"
 
 
+async def test_approval_names_the_whole_store(gateway):
+    # "Store: North" has a colon of its own; the card must not shorten it to "Store".
+    agent, registry = make_gated(gateway, [[call("w", "store-north__create_product", name="Ball", regular_price="9.00")], [say("Created.")]])
+    task, events = await run_gated(agent, "create a ball in North")
+    pending = await pending_request(registry)
+    asked = next(e for e in events if e["type"] == "approval_required")
+    assert asked["server"] == "store-north" and asked["server_name"] == "Store: North"
+    assert asked["summary"] == "Run store-north__create_product on Store: North"
+    registry.decide(pending.request_id, "conv-1", "owner-a", "deny")
+    await task
+
+
+def test_server_name_comes_from_meta_and_otherwise_keeps_the_store_prefix():
+    import mcp_types as types
+
+    from chat_agent.gateway import _server_name
+
+    tagged = types.Tool(name="store-north__x", title="Orders: list them", input_schema={"type": "object"},
+                        meta={"urumi.io/server": {"slug": "store-north", "name": "Store: North"}})
+    assert _server_name(tagged.name, tagged) == "Store: North"  # the data wins over the title
+    untagged = types.Tool(name="store-north__create_product", title="Store: North: Create product", input_schema={"type": "object"})
+    assert _server_name(untagged.name, untagged) == "Store: North"
+    assert _server_name("woo__list_orders", None) == "woo"
+
+
 async def test_denied_call_goes_back_to_the_model_as_not_run(gateway):
     agent, registry = make_gated(gateway, [[call("w", "woo__create_product", name="Ball", regular_price="9.00")], [say("Not done.")]])
     task, events = await run_gated(agent, "create")
